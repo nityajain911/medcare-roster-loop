@@ -101,6 +101,7 @@ def analyse(state, batch):
         if a["practice"] == "lakeview" and a["status"] == "Active":
             on_file[(provs[a["provider_id"]]["npi"], a["site"])] = a
 
+    noun = "email" if batch.get("kind") == "email" else "file"
     seen, results, touched = {}, [], set()
     for idx, raw in enumerate(batch["rows"]):
         row_no = idx + 1
@@ -154,7 +155,7 @@ def analyse(state, batch):
             {"label": "Found in synthetic registry", "ok": in_registry},
             {"label": "Required fields present", "ok": not missing,
              "detail": ("Missing: " + ", ".join(missing)) if missing else ""},
-            {"label": "Not a duplicate in this file", "ok": dup_of is None},
+            {"label": f"Not a duplicate in this {noun}", "ok": dup_of is None},
             {"label": "Effective date inside the plan's window", "ok": in_window if is_change and eff else None,
              "detail": "" if not (is_change and eff) else f"{abs((today - eff).days)} days ago, window {window} days"},
         ]
@@ -401,12 +402,15 @@ def read_email(state, text):
         else:
             continue
         reasons, conf = [], 95
+        spans = [(m.start(), m.end(), "name")]
         person = people.get(name.lower())
         if not person:
             conf = min(conf, 40)
             reasons.append("name not found in the synthetic registry")
         site_m = re.search(r"\b(Main|North|East)\b", seg, re.I)
         site = f"Lakeview {site_m.group(1).title()}" if site_m else ""
+        if site_m:
+            spans.append((m.end() + site_m.start(), m.end() + site_m.end(), "site"))
         on_file = None
         if person and action == "Removed":
             on_file = next((a for a in affs.values() if a["practice"] == "lakeview" and a["status"] == "Active"
@@ -417,6 +421,9 @@ def read_email(state, text):
         if not site:
             conf = min(conf, 60)
             reasons.append("site not stated")
+        date_m = re.search(r"this month|\btoday\b", seg, re.I)
+        if date_m:
+            spans.append((m.end() + date_m.start(), m.end() + date_m.end(), "date"))
         if re.search(r"this month", seg, re.I):
             eff, conf = today.replace(day=1), min(conf, 85)
             reasons.append('date read from "this month"')
@@ -433,8 +440,25 @@ def read_email(state, text):
             row.update(phone=on_file["phone"], start_date=on_file["start_date"])
         items.append({"action": action, "name": name, "row": row, "confidence": conf,
                       "needs_confirm": conf < CONFIDENCE_FLOOR, "reasons": reasons,
-                      "quote": (m.group(0) + seg).strip(" ,.")})
+                      "quote": (m.group(0) + seg).strip(" ,."), "spans": spans,
+                      "npi_from_registry": bool(person) and action == "Added"})
     return items
+
+
+def email_segments(text, items):
+    """Split the email into plain text and highlighted tags (name, site, date) for display."""
+    spans = sorted(sp for it in items for sp in it["spans"])
+    out, pos = [], 0
+    for start, end, kind in spans:
+        if start < pos:
+            continue
+        if start > pos:
+            out.append({"text": text[pos:start], "kind": None})
+        out.append({"text": text[start:end], "kind": kind})
+        pos = end
+    if pos < len(text):
+        out.append({"text": text[pos:], "kind": None})
+    return out
 
 
 def email_rows(items):
@@ -480,6 +504,7 @@ def metrics(state):
     confirmations = sum(len(a["scope"]) for a in state["attestations"])
     minutes = len(applied) * 15 + confirmations * 3
     accepted = len(submitted) - len(failed_checks) - len(rejected) - len(held)
+    waiting_sync = [c for c in released for d in c["destinations"] if d["name"] == "Directory" and d["status"] == "Pending"]
 
     def pct(n, d):
         return round(100 * n / d) if d else None
@@ -495,6 +520,9 @@ def metrics(state):
                        "errors_after_loading": len(reversed_applied), "access_incidents": len(access_incidents),
                        "blocked": state.get("blocked_attempts", 0), "applied": len(all_applied)},
         "hours": {"value": round(minutes / 60, 1), "changes": len(applied), "confirmations": confirmations},
+        "waiting_sync": len(waiting_sync),
+        "funnel": [("Submitted", len(submitted)), ("Passed checks", len(submitted) - len(failed_checks) - len(held)),
+                   ("Approved or automatic", len(released)), ("Confirmed by every destination", len(applied))],
         "by_practice": {
             p: {"n": sum(1 for a in current if a["practice"] == p), "d": sum(1 for a in active if a["practice"] == p)}
             for p in ("lakeview", "riverbend", "cedar")},

@@ -17,7 +17,7 @@
   <form method="post">
     <label class="attest"><input type="checkbox" name="agree" value="yes" id="agree"
       onchange="document.getElementById('record').disabled = !this.checked">
-      <span>I confirm the {{ roster | length }} affiliations shown are accurate as of today.</span></label>
+      <span>I confirm the {{ plural(roster | length, 'affiliation') }} shown {{ 'is' if roster | length == 1 else 'are' }} accurate as of today.</span></label>
     <div class="btn-row">
       <button class="btn" type="submit" id="record" disabled>Record confirmation</button>
       <a class="btn ghost" href="{{ url_for('practice') }}">Back</a>

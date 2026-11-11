@@ -15,27 +15,48 @@
 </div>
 
 <div class="card">
-  <h2>Send this cycle's update</h2>
-  <div class="btn-row" style="margin-top:12px">
-    <form method="post" action="{{ url_for('use_sample') }}"><button class="btn" type="submit">Use sample file</button></form>
+  <div class="card-head">
+    <h2>Send this cycle's update</h2>
     <a class="btn secondary" href="{{ url_for('confirm') }}">Confirm no changes</a>
-    <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="inline-form">
-      <input type="file" name="file" accept=".csv,text/csv" aria-label="Roster CSV file">
-      <button class="btn ghost" type="submit">Upload a CSV</button>
-    </form>
-    <a class="small-text" href="{{ url_for('sample_csv') }}">Download sample</a>
   </div>
-  <details class="more" id="email">
-    <summary>Or paste an email {{ sim() }}</summary>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tab-file" aria-controls="panel-file" aria-selected="true">Upload roster file</button>
+    <button type="button" role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false">Paste an email {{ sim() }}</button>
+  </div>
+  <div id="panel-file" role="tabpanel" aria-labelledby="tab-file">
+    <div class="btn-row">
+      <form method="post" action="{{ url_for('use_sample') }}"><button class="btn" type="submit">Use sample file</button></form>
+      <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="inline-form">
+        <input type="file" name="file" accept=".csv,text/csv" aria-label="Roster CSV file">
+        <button class="btn ghost" type="submit">Upload a CSV</button>
+      </form>
+      <a class="small-text" href="{{ url_for('sample_csv') }}">Download sample</a>
+    </div>
+  </div>
+  <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden>
     <form method="post" action="{{ url_for('read_email') }}">
       <textarea name="email" id="email-text" aria-label="Email text" placeholder="Paste the practice's email here"></textarea>
       <div class="btn-row" style="margin-top:10px">
         <button class="btn ghost" type="button" data-sample="{{ email_sample }}"
           onclick="document.getElementById('email-text').value = this.dataset.sample">Use sample email</button>
-        <button class="btn secondary" type="submit">Read email</button>
+        <button class="btn" type="submit">Read email</button>
       </div>
     </form>
-  </details>
+  </div>
+  <script>
+  (function () {
+    const tabs = document.querySelectorAll('[role="tab"]');
+    function show(id) {
+      tabs.forEach(t => {
+        const on = t.id === id;
+        t.setAttribute("aria-selected", on);
+        document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+      });
+    }
+    tabs.forEach(t => t.addEventListener("click", () => show(t.id)));
+    if (location.hash === "#email") show("tab-email");
+  })();
+  </script>
 </div>
 
 <div class="card">

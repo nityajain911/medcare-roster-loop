@@ -5,6 +5,12 @@
   <div><h1>Dashboard</h1><p>Computed live from this demo.</p></div>
 </div>
 
+{% if m.waiting_sync %}
+<div class="callout">{{ plural(m.waiting_sync, 'approved change') }} waiting for directory sync
+  <a class="btn small" href="{{ url_for('reconcile', **{'as': 'plan'}) }}">Go to Reconciliation</a></div>
+{% endif %}
+
+<h2 class="section-title">Roster health (overall)</h2>
 <div class="grid grid-2">
   <div class="tile star">
     <h3>North star: Share of eligible records confirmed and current</h3>
@@ -13,10 +19,8 @@
     <div class="formula">confirmed or applied / active records = {{ m.north_star.n }} / {{ m.north_star.d }}</div>
   </div>
   <div class="tile">
-    <h3>Approved changes confirmed by every destination</h3>
-    <div class="big">{{ val(m.applied.value) }}</div>
-    <div class="formula">applied / approved = {{ m.applied.n }} / {{ m.applied.d }}</div>
-    <div class="bars" style="margin-top:14px">
+    <h3>By practice</h3>
+    <div class="bars">
       {% for key, p in m.by_practice.items() %}
       <div class="row"><span>{{ practices[key].name }}</span>
         <span class="track2"><i style="width: {{ (100 * p.n / p.d) | round | int if p.d else 0 }}%"></i></span>
@@ -27,6 +31,24 @@
   </div>
 </div>
 
+<h2 class="section-title">This cycle's changes</h2>
+<div class="grid grid-2">
+  <div class="tile">
+    <h3>From submitted to confirmed</h3>
+    {% set top = m.funnel[0][1] or 1 %}
+    <div class="funnel">
+      {% for label, n in m.funnel %}
+      <div class="step"><span>{{ label }}</span><span class="track2"><i style="width: {{ 100 * n / top }}%"></i></span><span class="mono">{{ n }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="formula">counts of submitted changes at each stage</div>
+  </div>
+  <div class="tile">
+    <h3>Approved changes confirmed by every destination</h3>
+    <div class="big">{{ val(m.applied.value) }}</div>
+    <div class="formula">applied / approved = {{ m.applied.n }} / {{ m.applied.d }}</div>
+  </div>
+</div>
 <div class="grid grid-3" style="margin-top:16px">
   <div class="tile"><h3>Directory updated within 2 business days</h3><div class="big">{{ val(m.directory_2d.value) }}</div>
     <div class="formula">within 2 business days / applied = {{ m.directory_2d.n }} / {{ m.directory_2d.d }}</div>
@@ -41,7 +63,7 @@
     <p class="muted small-text" style="margin-top:8px">Assumption from the deck's base case.</p></div>
 </div>
 
-<h2 style="margin-top:24px">Guardrails</h2>
+<h2 class="section-title">Guardrails</h2>
 {% set gr = m.guardrails %}
 <div class="guardrails">
   <div class="guard {{ 'bad' if gr.unauthorised }}"><b>{{ gr.unauthorised }}</b><span>Unauthorised changes</span>

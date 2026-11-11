@@ -20,6 +20,20 @@
 </div>
 {% endif %}
 
+{% if changes %}
+<div class="card pipe {{ 'animate' if pipe.animate }}" aria-label="Where changes have reached">
+  <div class="pipe-row">
+    <div class="node">Practice submission</div>
+    <div class="link link-{{ pipe.db.state }}"><span class="line"></span><span class="lbl">{{ pipe.db.label }}</span></div>
+    <div class="node">Provider database</div>
+    <div class="link link-{{ pipe.dir.state }}"><span class="line"></span><span class="lbl">{{ pipe.dir.label }}</span></div>
+    <div class="node">Directory</div>
+    <div class="link link-later"><span class="line"></span><span class="lbl">Not counted</span></div>
+    <div class="node node-later">Claims and prior auth<small>Later, shown for illustration</small></div>
+  </div>
+</div>
+{% endif %}
+
 {% for c in changes %}
 {% set req = c.destinations | rejectattr('later') | list %}
 {% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}

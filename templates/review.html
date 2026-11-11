@@ -19,7 +19,7 @@
     <h2>What the AI read {{ sim() }}</h2>
     {% if batch.mapping_confirmed %}<span class="chip chip-green">Confirmed</span>{% else %}<span class="chip chip-amber">Needs your confirmation</span>{% endif %}
   </div>
-  <div class="email-quote">{{ batch.email }}</div>
+  <div class="email-quote">{% for seg in batch.segments %}{% if seg.kind %}<mark class="tag-{{ seg.kind }}">{{ seg.text }}<small>{{ seg.kind }}</small></mark>{% else %}{{ seg.text }}{% endif %}{% endfor %}</div>
   <form method="post" action="{{ url_for('confirm_mapping', bid=batch.id) }}">
     <div class="mapping">
       {% for it in batch["items"] %}
@@ -75,26 +75,44 @@
 
 {% set acted = result.rows | rejectattr('type', 'equalto', 'Unchanged') | list %}
 {% set same = result.rows | selectattr('type', 'equalto', 'Unchanged') | list %}
+{% set noun = 'email' if batch.kind == 'email' else 'file' %}
+{% set total = result.rows | length %}
 <div class="card" id="changes">
   <div class="card-head"><h2>Changes found</h2></div>
+  <div class="typebar" role="img" aria-label="Row types in this {{ noun }}">
+    {% for key in ['Unchanged', 'Added', 'Removed', 'Changed', 'Invalid', 'Duplicate'] %}{% if result.counts[key] %}<i class="t-{{ key | lower }}" style="width: {{ 100 * result.counts[key] / total }}%"></i>{% endif %}{% endfor %}
+  </div>
+  <div class="legend">
+    {% for key, label in [('Unchanged', 'Unchanged'), ('Added', 'Added'), ('Removed', 'Removed'), ('Changed', 'Changed'), ('Invalid', 'Bad NPI'), ('Duplicate', 'Duplicate')] %}{% if result.counts[key] %}<span class="t-{{ key | lower }}">{{ label }} {{ result.counts[key] }}</span>{% endif %}{% endfor %}
+  </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Row</th><th>Clinician</th><th>Change</th><th>Checks</th><th>Route</th></tr></thead>
       <tbody>
       {% for r in acted %}
-        <tr>
+        {% set needs_fix = r.route in ['sent_back', 'held'] and r.type in ['Invalid', 'Duplicate'] %}
+        <tr data-route="{{ r.route }}" data-type="{{ r.type }}" {% if needs_fix and not batch.submitted %}data-needfix="1"{% endif %} class="{{ 'dropped' if r.dropped }}">
           <td class="muted">{{ r.row_no }}</td>
-          <td><strong>{{ r.name }}</strong><br><span class="muted small-text">{{ r.site_name }}</span></td>
+          <td><strong>{{ r.name }}</strong><br><span class="muted small-text">{{ r.site_name }}</span>
+            {% if batch.kind == 'email' and r.type == 'Added' %}<br><span class="muted small-text">NPI matched from synthetic registry by name</span>{% endif %}</td>
           <td class="diff">
             {{ type_chip(r.type) }} {% if r.flagged %}<span class="flag">Back-dated</span>{% endif %}<br>
             {% if r.type == 'Added' %}Joins as <span class="new">{{ r.specialty }}</span>
             {% elif r.type == 'Removed' %}Left <span class="new">{{ r.effective_date }}</span>
             {% elif r.type == 'Changed' %}{% for c in r.changes %}{{ c.label }}: <span class="old">{{ c.old }}</span><span class="arrow">→</span><span class="new">{{ c.new }}</span><br>{% endfor %}
-            {% elif r.type == 'Invalid' %}<span class="mono">{{ r.npi }}</span>{% endif %}
+            {% elif r.type == 'Invalid' and not batch.submitted %}
+              <label class="small-text" for="npi_fix_{{ r.row_no }}">Fix NPI</label><br>
+              <input class="npi-fix" type="text" inputmode="numeric" maxlength="10" id="npi_fix_{{ r.row_no }}" name="npi_fix_{{ r.row_no }}" form="submit-form" value="{{ r.npi }}" onfocus="this.select()">
+            {% elif r.type == 'Invalid' %}<span class="mono">{{ r.npi }}</span>
+            {% elif r.type == 'Duplicate' and not batch.submitted %}
+              <input type="hidden" name="drop_{{ r.row_no }}" value="0" form="submit-form">
+              <button class="btn ghost small drop-btn" type="button">Drop duplicate</button>
+            {% endif %}
+            {% if r.dropped %}<span class="muted small-text">Dropped before submitting</span>{% endif %}
           </td>
-          <td>{{ checks(r.checks) }}</td>
-          <td style="min-width:190px">{{ chip(r.route) }}{% if r.change_id %} <span class="mono muted">{{ r.change_id }}</span>{% endif %}
-            <div class="why">{{ r.why }}</div></td>
+          <td class="checks-cell">{{ checks(r.checks) }}</td>
+          <td style="min-width:190px">{{ chip(r.route) if not r.dropped else '' }}{% if r.change_id %} <span class="mono muted">{{ r.change_id }}</span>{% endif %}
+            <div class="why">{{ r.why if not r.dropped else '' }}</div></td>
         </tr>
       {% endfor %}
       </tbody>
@@ -102,12 +120,12 @@
   </div>
   {% if same %}
   <details class="unchanged">
-    <summary>{{ same | length }} unchanged rows, all checks passed. Counted as confirmed.</summary>
-    <p class="small-text muted">{% for r in same %}{{ r.name }} ({{ r.site_name }}){{ ', ' if not loop.last }}{% endfor %}</p>
+    <summary>{{ plural(same | length, 'unchanged row') }}, all checks passed. Counted as confirmed.</summary>
+    <p class="small-text muted">{% for r in same %}{{ r.name }} ({{ r.site_name }}){% if r.fixed_inline %}, NPI fixed{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
   </details>
   {% endif %}
-  {% if result.missing %}
-    <p class="muted small-text">{{ result.missing | length }} rows on file weren't in this file. They stay as they are.</p>
+  {% if result.missing and batch.kind != 'email' %}
+    <p class="muted small-text">{{ plural(result.missing | length, 'row') }} on file {{ 'was' if result.missing | length == 1 else 'were' }}n't in this file. They stay as they are.</p>
   {% endif %}
 </div>
 
@@ -115,9 +133,63 @@
   <div class="card tight btn-row"><span class="chip chip-green">Submitted {{ batch.submitted_at }}</span>
     <a class="btn secondary" href="{{ url_for('practice_status') }}">See status</a></div>
 {% else %}
-  <form method="post" action="{{ url_for('submit', bid=batch.id) }}" class="card tight btn-row">
-    <button class="btn big" type="submit" {{ 'disabled' if not batch.mapping_confirmed }}>Submit changes</button>
+  <form method="post" action="{{ url_for('submit', bid=batch.id) }}" class="card tight btn-row" id="submit-form">
+    <button class="btn big" type="submit" id="submit-btn" {{ 'disabled' if not batch.mapping_confirmed }}>Submit changes</button>
     {% if not batch.mapping_confirmed %}<span class="muted small-text">Confirm the {{ 'AI reading' if batch.kind == 'email' else 'mapping' }} first.</span>{% endif %}
   </form>
+  <script>
+  (function () {
+    const registry = new Set({{ registry | tojson }});
+    function npiOk(npi) {
+      if (!/^\d{10}$/.test(npi)) return false;
+      let total = 0;
+      ("80840" + npi).split("").reverse().forEach((ch, i) => {
+        let d = +ch;
+        if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+        total += d;
+      });
+      return total % 10 === 0;
+    }
+    function badge(ok, label) {
+      return '<li class="check ' + (ok ? 'pass' : 'fail') + '"><span class="dot" aria-hidden="true">' + (ok ? '✓' : '✕') + '</span>' + label + '</li>';
+    }
+    function refresh() {
+      const rows = document.querySelectorAll("#changes tbody tr");
+      let send = 0, fix = 0;
+      rows.forEach(tr => {
+        if (tr.classList.contains("dropped")) return;
+        const route = tr.dataset.route;
+        if (route === "automatic" || route === "plan_review") send++;
+        if (tr.dataset.needfix === "1" && tr.dataset.fixed !== "1") fix++;
+      });
+      const btn = document.getElementById("submit-btn");
+      btn.textContent = "Submit " + send + " change" + (send === 1 ? "" : "s") +
+        (fix ? " · " + fix + " need" + (fix === 1 ? "s" : "") + " a fix" : "");
+    }
+    document.querySelectorAll(".npi-fix").forEach(input => {
+      const tr = input.closest("tr");
+      const cell = tr.querySelector(".checks-cell");
+      input.addEventListener("input", () => {
+        const npi = input.value.replace(/\D/g, "");
+        const ok = npiOk(npi), known = registry.has(npi);
+        cell.innerHTML = '<ul class="checks">' + badge(ok, "Check digit") + badge(known, "Found in synthetic registry") + "</ul>";
+        tr.dataset.fixed = ok && known ? "1" : "0";
+        refresh();
+      });
+    });
+    document.querySelectorAll(".drop-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tr = btn.closest("tr"), field = tr.querySelector('input[name^="drop_"]');
+        const drop = field.value !== "1";
+        field.value = drop ? "1" : "0";
+        tr.classList.toggle("dropped", drop);
+        tr.dataset.fixed = drop ? "1" : "0";
+        btn.textContent = drop ? "Undo" : "Drop duplicate";
+        refresh();
+      });
+    });
+    refresh();
+  })();
+  </script>
 {% endif %}
 {% endblock %}

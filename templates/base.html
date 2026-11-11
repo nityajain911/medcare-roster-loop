@@ -14,7 +14,7 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="role-{{ role }}">
   <header class="topbar">
     <div class="wrap topbar-inner">
       <a class="logo" href="{{ url_for('home') }}">

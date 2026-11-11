@@ -9,6 +9,14 @@
   <div class="stats"><div class="stat"><b>{{ waiting | length }}</b><span>Waiting</span></div></div>
 </div>
 
+{% if automatic %}
+<details class="card tight autolog">
+  <summary><b>{{ plural(automatic | length, 'change') }} applied automatically under plan policy</b></summary>
+  <ul class="events">{% for c in automatic %}<li><span class="mono">{{ c.id }}</span> <b>{{ c.name }}</b>:
+    <span class="diff">{% for f in c.changed_fields %}{{ f.label }} <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span>{% endfor %}</span> · {{ c.status }}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+
 {% set approver = role == 'plan' %}
 {% if not approver %}
 <div class="readonly">Only plan approvers can decide changes. Read-only view.
@@ -32,7 +40,19 @@
       <div class="diff">
         {% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}
       </div>
+      {% if c.npi_note %}<p class="muted small-text" style="margin:4px 0 0">{{ c.npi_note }}</p>{% endif %}
       <div class="why"><b>Why here:</b> {{ c.why }}</div>
+      {% set dl = date_lines[c.id] %}
+      {% if dl %}
+      <div class="dateline" aria-label="Requested date against the window">
+        <div class="pt"><b>{{ dl.requested }}</b>Requested</div>
+        <div class="seg gap"></div>
+        <div class="pt"><b>{{ dl.limit }}</b>Window limit</div>
+        <div class="seg"></div>
+        <div class="pt"><b>{{ dl.today }}</b>Today</div>
+      </div>
+      <div class="dateline-note">{{ plural(dl.gap, 'day') }} before the {{ dl.window }}-day window</div>
+      {% endif %}
       {% if c.type == 'Removed' %}<p class="muted small-text" style="margin:6px 0 0">Affected systems: provider database, directory (claims and prior auth later)</p>{% endif %}
       {% if c.flagged and c.type == 'Removed' %}<p class="small-text" style="margin:4px 0 0;color:#8A5A12">The original date would also move claims and prior auth end dates back.</p>{% endif %}
     </div>

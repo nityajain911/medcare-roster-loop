@@ -1,5 +1,6 @@
 import csv
 import datetime as dt
+import io
 import json
 import re
 import secrets
@@ -27,8 +28,8 @@ NAV = [
 ]
 # Roles from deck slide 12. Only plan approvers can decide changes.
 ROLES = {
-    "practice": {"title": "Practice admin", "org": "Lakeview Family Practice"},
-    "plan": {"title": "Plan analyst (approver)", "org": "Northwind Health Plan"},
+    "practice": {"title": "Practice admin", "org": "Lakeview Family Practice", "short": "Practice admin, Lakeview"},
+    "plan": {"title": "Plan analyst (approver)", "org": "Northwind Health Plan", "short": "Plan analyst, Northwind"},
 }
 OPEN_STATUSES = {"In plan review", "Waiting for systems", "Partially applied"}
 
@@ -54,8 +55,10 @@ def load_state():
             while len(STATES) > MAX_VISITORS:
                 STATES.popitem(last=False)
         g.vid, g.state = vid, STATES[vid]
-    if request.args.get("as") in ROLES:
-        g.state["role"] = request.args["as"]
+    wanted = request.args.get("as")
+    if wanted in ROLES and wanted != g.state["role"]:
+        g.state["role"] = wanted
+        flash(f"Now viewing as {ROLES[wanted]['short']}.", "role")
     if request.method == "GET" and request.endpoint in ("practice_status", "dashboard"):
         g.state.setdefault("seen", set()).add(request.endpoint)
 
@@ -113,6 +116,11 @@ def flash(msg, kind="info"):
     g.state["flash"].append({"msg": msg, "kind": kind})
 
 
+@app.template_global()
+def plural(n, word):
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
 def actor():
     r = ROLES[g.state["role"]]
     return f"{r['title']}, {r['org']}"
@@ -158,7 +166,7 @@ def home():
 @app.post("/role")
 def switch_role():
     g.state["role"] = "plan" if g.state["role"] == "practice" else "practice"
-    flash(f"Now viewing as {ROLES[g.state['role']]['title']}.", "info")
+    flash(f"Now viewing as {ROLES[g.state['role']]['short']}.", "role")
     target = request.form.get("next", "")
     return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("home"))
 
@@ -228,6 +236,7 @@ def read_email():
         return redirect(url_for("practice") + "#email")
     bid = new_batch_id()
     g.state["batches"][bid] = {"id": bid, "kind": "email", "source": "Email", "email": text, "items": items,
+                              "segments": logic.email_segments(text, items),
                               "rows": logic.email_rows(items), "mapping": logic.IDENTITY_MAPPING,
                               "created": logic.now(), "submitted": False,
                               "mapping_confirmed": not any(i["needs_confirm"] for i in items)}
@@ -248,7 +257,7 @@ def confirm():
         for aid in scope:
             s["confirmed"][aid] = {"time": t, "by": actor(), "source": "Confirmation"}
         s["attestations"].append({"time": t, "by": actor(), "scope": scope, "source": "Confirm no changes"})
-        flash(f"{len(scope)} affiliations confirmed.", "success")
+        flash(f"{plural(len(scope), 'affiliation')} confirmed.", "success")
         return redirect(url_for("practice"))
     return render_template("confirm.html", active="practice", area="practice", roster=roster,
                            open_changes=open_changes,
@@ -317,7 +326,7 @@ def review(bid):
     result = batch.get("result") if batch["submitted"] else analyse(batch)
     return render_template("review.html", active="practice", area="practice", batch=batch,
                            result=result, fields=logic.FIELDS, labels=logic.FIELD_LABELS,
-                           floor=logic.CONFIDENCE_FLOOR)
+                           floor=logic.CONFIDENCE_FLOOR, registry=sorted(g.state["registry"]))
 
 
 @app.post("/practice/review/<bid>/mapping")
@@ -355,11 +364,24 @@ def submit(bid):
     if not batch["mapping_confirmed"]:
         flash("Confirm the mapping before submitting.", "error")
         return redirect(url_for("review", bid=bid))
+    # Fixes made on this page: corrected NPIs are checked again; dropped duplicates are not sent.
+    npi_col = next(i for i, m in enumerate(batch["mapping"]) if m["field"] == "npi")
+    fixed = set()
+    for i, row in enumerate(batch["rows"]):
+        new_npi = re.sub(r"\D", "", request.form.get(f"npi_fix_{i + 1}", ""))
+        if new_npi and new_npi != re.sub(r"\D", "", row[npi_col]):
+            row[npi_col] = new_npi
+            fixed.add(i + 1)
+    dropped = {int(k[5:]) for k, v in request.form.items() if k.startswith("drop_") and v == "1" and k[5:].isdigit()}
     result = analyse(batch)
     t = logic.now()
     source = "Email" if batch.get("kind") == "email" else "File"
     created, scope = [], []
     for r in result["rows"]:
+        r["fixed_inline"] = r["row_no"] in fixed
+        if r["row_no"] in dropped and r["type"] == "Duplicate":
+            r["dropped"] = True
+            continue
         if r["type"] == "Unchanged" and r["route"] == "none":
             s["confirmed"][r["aff_id"]] = {"time": t, "by": actor(), "source": source}
             scope.append(r["aff_id"])
@@ -370,7 +392,9 @@ def submit(bid):
                              aff_id=r["aff_id"], specialty=specialty, old=old, new=new,
                              changed_fields=fields, checks=r["checks"], route=r["route"], first_route=r["route"],
                              why=r["why"], flagged=r["flagged"], status=ROUTE_STATUS.get(r["route"], "Held"),
-                             submitted_at=t, checked_at=t, matched_name=r.get("matched_name"), row=raw_row(r))
+                             submitted_at=t, checked_at=t, matched_name=r.get("matched_name"), row=raw_row(r),
+                             npi_note=("NPI matched from synthetic registry by name"
+                                       if source == "Email" and r["type"] == "Added" else ""))
         logic.event(c, f"Submitted by Lakeview ({source.lower()})")
         logic.event(c, "Checked by MedCare")
         route_change(s, c, t)
@@ -381,7 +405,7 @@ def submit(bid):
     batch["submitted"], batch["result"], batch["submitted_at"] = True, result, t
     review_n = sum(1 for c in created if c["route"] == "plan_review")
     held_n = sum(1 for c in created if c["route"] == "held")
-    msg = f"Submitted {len(created)} changes"
+    msg = f"Submitted {plural(len(created), 'change')}"
     msg += f" ({held_n} duplicate held)." if held_n else "."
     msg += f" {review_n} need plan review."
     flash(msg, "success")
@@ -437,14 +461,52 @@ def practice_status():
                            attestations=list(reversed(g.state["attestations"])), today=dt.date.today().isoformat())
 
 
+@app.route("/practice/status/export.csv")
+def export_confirmation():
+    """Applied changes and confirmed records for Lakeview, as the practice's proof of what is live."""
+    s = g.state
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Clinician", "Site", "Change", "Effective date", "Applied time", "Acknowledged by"])
+    done = set()
+    for c in sorted(s["changes"].values(), key=lambda c: c["id"]):
+        if c["status"] != "Applied":
+            continue
+        eff = c["new"].get("end_date") or (c.get("row") or {}).get("effective_date") or c["new"].get("start_date", "")
+        acked = "; ".join(d["name"] for d in logic.required(c) if d["status"] == "Acknowledged")
+        w.writerow([c["name"], c["site_name"], c["type"], eff, c.get("applied_at", ""), acked])
+        done.add(c.get("aff_id"))
+    for aid, info in s["confirmed"].items():
+        a = s["affiliations"][aid]
+        if a["practice"] != "lakeview" or aid in done:
+            continue
+        w.writerow([s["providers"][a["provider_id"]]["name"], data.SITES[a["site"]]["name"],
+                    "Confirmed, no change", "", info["time"], "Not needed"])
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=lakeview_confirmation.csv"})
+
+
+def date_line(state, c):
+    """Requested date, window limit and today, for a back-dated change."""
+    requested = logic.parse_date((c.get("row") or {}).get("effective_date", ""))
+    if not (c["flagged"] and requested):
+        return None
+    today = dt.date.today()
+    limit = today - dt.timedelta(days=state["settings"]["window_days"])
+    return {"requested": requested.isoformat(), "limit": limit.isoformat(), "today": today.isoformat(),
+            "gap": (limit - requested).days, "window": state["settings"]["window_days"]}
+
+
 @app.route("/plan/queue")
 def plan_queue():
     changes = list(g.state["changes"].values())
     waiting = [c for c in changes if c["status"] == "In plan review"]
     decided = [c for c in changes if c["decision"] and c["decision"]["action"] in ("Approved", "Rejected")
                and c["source"] != "Correction"]
+    automatic = [c for c in changes if c["route"] == "automatic"]
     return render_template("queue.html", active="plan_queue", area="plan", waiting=waiting,
-                           decided=list(reversed(decided)), today=dt.date.today().isoformat())
+                           decided=list(reversed(decided)), today=dt.date.today().isoformat(),
+                           automatic=automatic, date_lines={c["id"]: date_line(g.state, c) for c in waiting})
 
 
 @app.post("/plan/change/<cid>/approve")
@@ -463,6 +525,7 @@ def approve(cid):
             c["new"]["end_date"] = today
             c["changed_fields"][0]["new"] = f"Left, effective {today}"
             c["date_choice"] = f"Apply from today instead ({today}). File said {original}."
+            c["plan_changed_date"] = f"The plan applied this from {today} instead of {original}."
         else:
             c["date_choice"] = f"Apply with original date ({original})."
         logic.event(c, c["date_choice"])
@@ -495,9 +558,31 @@ def reconcile():
     changes = [c for c in g.state["changes"].values() if c["destinations"]]
     changes.sort(key=lambda c: ({"Partially applied": 0, "Waiting for systems": 1}.get(c["status"], 2), c["id"]))
     pending = sum(1 for c in changes for d in c["destinations"] if d["name"] == "Directory" and d["status"] == "Pending")
-    return render_template("reconcile.html", active="reconcile", area="plan", changes=changes,
+    pipe = pipeline(changes)
+    key = (pipe["db"]["state"], pipe["db"]["label"], pipe["dir"]["state"], pipe["dir"]["label"])
+    pipe["animate"] = g.state.get("last_pipeline") not in (None, key)
+    g.state["last_pipeline"] = key
+    return render_template("reconcile.html", active="reconcile", area="plan", changes=changes, pipe=pipe,
                            pending=pending, saved_map=g.state["saved_specialty_map"],
                            registry_codes=g.state["registry_taxonomy"])
+
+
+def pipeline(changes):
+    """Connector states for Practice submission → Provider database → Directory, from every sent change."""
+    n = len(changes)
+    db = sum(1 for c in changes for d in c["destinations"] if d["name"] == "Provider database" and d["status"] == "Acknowledged")
+    dirs = [d["status"] for c in changes for d in c["destinations"] if d["name"] == "Directory"]
+    acked, pending, failed = dirs.count("Acknowledged"), dirs.count("Pending"), dirs.count("Failed")
+    if not n:
+        return {"db": {"state": "idle", "label": "Nothing sent"}, "dir": {"state": "idle", "label": "Nothing sent"}}
+    db_state = {"state": "ok" if db == n else "pending", "label": f"{db} of {n} acknowledged"}
+    if failed:
+        dir_state = {"state": "failed", "label": f"{failed} failed · {acked} of {n} acknowledged"}
+    elif pending:
+        dir_state = {"state": "pending", "label": f"{pending} pending · {acked} of {n} acknowledged"}
+    else:
+        dir_state = {"state": "ok", "label": f"{acked} of {n} acknowledged"}
+    return {"db": db_state, "dir": dir_state}
 
 
 @app.post("/reconcile/sync")
