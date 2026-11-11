@@ -9,24 +9,40 @@
 </div>
 
 {% for c in changes if c.source != 'Correction' %}
+{% set req = c.destinations | rejectattr('later') | list %}
 {% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
-{% set closed = c.status in ['Sent back', 'Rejected by plan', 'Held'] %}
-<div class="card">
+{% set closed = c.status in ['Sent back', 'Rejected by plan', 'Held', 'Confirmed', 'Duplicate removed'] %}
+<div class="card" id="{{ c.id }}">
   <div class="card-head">
     <div><span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }}
       <h2 style="margin-top:4px">{{ c.name }}</h2>
-      <span class="muted small-text">{{ c.site_name }}</span></div>
+      <span class="muted small-text">{{ c.site_name }}. Sent by {{ c.source | lower }}.</span></div>
     <div style="text-align:right">{{ chip(c.status) }}<br>
-      {% if dirdest and dirdest.status == 'Acknowledged' %}<span class="live">Live in directory</span>
-      {% elif c.destinations %}<span class="notlive">{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ c.destinations | length }} systems updated</span>{% endif %}
+      {% if dirdest and dirdest.status == 'Acknowledged' %}
+        {% if c.type == 'Removed' %}<span class="removed-live">Removed from directory</span>{% else %}<span class="live">Live in directory</span>{% endif %}
+      {% elif req %}<span class="notlive">{{ req | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ req | length }} systems updated</span>{% endif %}
     </div>
   </div>
   {% if closed %}
-    <div class="reason">
+    <div class="reason" {% if c.status in ['Confirmed', 'Duplicate removed'] %}style="background:#EEF6E4;color:#35560F"{% endif %}>
       {% if c.status == 'Rejected by plan' %}Sent back by plan: {{ c.decision.note }}
       {% elif c.status == 'Sent back' %}Sent back by MedCare checks: {{ c.why }}
+      {% elif c.status == 'Confirmed' %}{{ c.why }}
+      {% elif c.status == 'Duplicate removed' %}Duplicate row removed. The first row was already counted.
       {% else %}Held: {{ c.why }}{% endif %}
     </div>
+    {% if c.status == 'Sent back' %}
+    <form method="post" action="{{ url_for('correct_npi', cid=c.id) }}" class="inline-form" style="margin-top:10px">
+      <label for="npi-{{ c.id }}" class="small-text">Corrected NPI</label>
+      <input type="text" id="npi-{{ c.id }}" name="npi" inputmode="numeric" maxlength="10" value="{{ c.npi }}" style="max-width:150px">
+      <button class="btn small" type="submit">Check again and resend</button>
+      {% if c.matched_name %}<span class="muted small-text">Tip: compare with the NPI on file for {{ c.matched_name }} on the Practice page.</span>{% endif %}
+    </form>
+    {% elif c.status == 'Held' and c.type == 'Duplicate' %}
+    <form method="post" action="{{ url_for('remove_duplicate', cid=c.id) }}" style="margin-top:10px">
+      <button class="btn small ghost" type="submit">Remove duplicate row</button>
+    </form>
+    {% endif %}
   {% else %}
   <div class="track">
     <div class="stage done"><b>Submitted</b><span>{{ c.submitted_at }}</span></div>
@@ -39,7 +55,7 @@
       <div class="stage"><b>Approved</b><span>Waiting for plan review</span></div>
     {% endif %}
     <div class="stage {{ 'done' if c.status == 'Applied' else ('warn' if c.status == 'Partially applied' else '') }}">
-      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif c.status == 'Partially applied' %}{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ c.destinations | length }} systems updated{% else %}Not yet{% endif %}</span></div>
+      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif req %}{{ req | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ req | length }} systems updated{% else %}Not yet{% endif %}</span></div>
   </div>
   {% endif %}
 </div>

@@ -1,9 +1,24 @@
-# Prototype spec: MedCare Roster Loop (v3, as built)
+# Prototype spec: MedCare Roster Loop (v4, as built, matches the submitted deck)
 
 Live: https://medcare-roster-loop.onrender.com · Code: https://github.com/nityajain911/medcare-roster-loop
 
 **Paste this into Claude Code, opened inside `proto_starter/`:**
 > Read CLAUDE.md and PROTOTYPE_SPEC.md. Build exactly this spec in this Flask starter, P0 first. Synthetic data only. Then run the `prototype-tester` agent, fix what it finds, and tell me when it is ready to push to GitHub and Render.
+
+
+## v4: deck alignment (overrides anything below that conflicts)
+The submitted deck is final, so the app matches it.
+1. **One pilot destination:** the plan's provider database, which feeds the directory. Applied needs both. "Claims and prior auth" is a greyed tile labelled "Later, shown for illustration" and never blocks Applied. Counts read "x of 2". Removals list "provider database, directory (claims and prior auth later)".
+2. **Removals** show "Removed from directory" (not "Live in directory") on Practice status and Reconciliation.
+3. **Approval note** is empty with the placeholder "Optional note for the audit trail". A back-dated change needs a reason.
+4. **Counts:** a submitted change is any change record from a file or email, duplicates included. The banner reads "Submitted 5 changes (1 duplicate held)". Accepted first time = not sent back, rejected or held / submitted (3 / 5), showing "duplicates held: 1".
+5. **Practice correct and resend** on Practice status: a bad NPI can be corrected, checked again and routed as normal (the right NPI counts as confirmed); a duplicate has "Remove duplicate row".
+6. **Back-dated removals:** the plan chooses "Apply with original date" or "Apply from today instead". The choice and reason go in the audit trail; the effective date changes if today is chosen.
+7. **Email intake:** "Paste an email" on the Practice page, with "Use sample email". Simulated AI (keyword rules) turns it into the same two changes with a confidence %; under 70% asks the user to confirm. SFTP stays a future channel.
+8. **Plan settings** shows the full change-type policy from deck slide 8 as a read-only table, plus the phone toggle and window.
+9. **Dashboard** (deck slide 13): "Share of eligible records confirmed and current", "Approved changes confirmed by every destination", "Directory updated within 2 business days" (commercial rule, directory only), and a guardrail strip (unauthorised changes, wrong removals, errors after loading, access incidents), all computed with formulas shown.
+10. **Roles** (deck slide 12): the header shows Practice admin or Plan analyst (approver) with a switch. A practice admin sees the plan queue, reconciliation and settings read-only ("Only plan approvers can decide changes"); blocked attempts are counted. The guided Next button switches role as needed.
+11. Practice page notes "Thin portal inside the plan's provider portal (single sign-on)". Home adds "Synthetic data. AI mapping and destination systems are simulated."
 
 ---
 

@@ -227,34 +227,37 @@ def event(change, label):
     change["events"].append({"time": now(), "label": label})
 
 
-DESTINATIONS = ["Provider database", "Claims and prior auth", "Directory"]
+# The pilot has one destination: the plan's provider database, which feeds the directory.
+# Claims and prior auth is shown for illustration only and never blocks Applied.
+REQUIRED_DESTINATIONS = ["Provider database", "Directory"]
 
 
-def _claims_note(change):
-    if change["type"] in ("Removed",) and change["new"].get("end_date"):
-        return f"End date {change['new']['end_date']} recorded for claims and prior auth checks."
-    if change["type"] == "Added":
-        return f"Clinician active for claims and prior auth from {change['new'].get('start_date', 'today')}."
-    return "Provider record updated for claims and prior auth."
+def stamp():
+    return dt.datetime.now().isoformat(timespec="seconds")
+
+
+def required(change):
+    return [d for d in change["destinations"] if not d.get("later")]
 
 
 def dispatch(state, change):
-    """Send to every destination. Provider database and claims acknowledge at once; the directory waits for sync."""
+    """Provider database acknowledges at once; the directory waits for sync."""
+    change["released_ts"] = stamp()
     change["destinations"] = [
-        {"name": "Provider database", "status": "Acknowledged", "time": now(), "attempts": 1,
-         "note": "Stored (specialty kept as free text)."},
-        {"name": "Claims and prior auth", "status": "Acknowledged", "time": now(), "attempts": 1,
-         "note": _claims_note(change)},
-        {"name": "Directory", "status": "Pending", "time": None, "attempts": 0, "note": "Waiting for directory sync."},
+        {"name": "Provider database", "status": "Acknowledged", "time": now(), "ts": stamp(), "attempts": 1,
+         "note": "Stored (specialty kept as free text). Feeds the directory."},
+        {"name": "Directory", "status": "Pending", "time": None, "ts": None, "attempts": 0,
+         "note": "Waiting for directory sync."},
+        {"name": "Claims and prior auth", "status": "Later", "later": True, "time": None, "ts": None, "attempts": 0,
+         "note": "Later, shown for illustration. Not connected in the pilot."},
     ]
-    event(change, "Sent to " + ", ".join(DESTINATIONS).lower())
+    event(change, "Sent to provider database and directory")
     event(change, "Provider database acknowledged")
-    event(change, "Claims and prior auth acknowledged")
     refresh_status(state, change)
 
 
 def refresh_status(state, change):
-    dests = change["destinations"]
+    dests = required(change)
     if not dests:
         return
     acked = [d for d in dests if d["status"] == "Acknowledged"]
@@ -263,7 +266,7 @@ def refresh_status(state, change):
         if change["status"] != "Applied":
             change["status"] = "Applied"
             change["applied_at"] = now()
-            event(change, "Applied: every destination acknowledged")
+            event(change, "Applied: provider database and directory acknowledged")
             apply_to_roster(state, change)
     elif failed and acked:
         change["status"] = "Partially applied"
@@ -308,13 +311,17 @@ def directory_code(state, specialty):
     return DIRECTORY_CODES.get(specialty) or state["saved_specialty_map"].get(specialty)
 
 
+def directory_code(state, specialty):
+    return DIRECTORY_CODES.get(specialty) or state["saved_specialty_map"].get(specialty)
+
+
 def run_directory_sync(state):
     acked = failed = 0
     for c in state["changes"].values():
         for d in c["destinations"]:
             if d["name"] == "Directory" and d["status"] == "Pending":
                 d["attempts"] += 1
-                d["time"] = now()
+                d["time"], d["ts"] = now(), stamp()
                 code = directory_code(state, c["specialty"])
                 if code:
                     d.update(status="Acknowledged", note=f"Accepted with specialty code {code}.")
@@ -336,8 +343,9 @@ def fix_and_resend(state, change, code):
     state["saved_specialty_map"][change["specialty"]] = code
     change["directory_code"] = code
     d["attempts"] += 1
-    d.update(status="Acknowledged", time=now(), note=f"Accepted with specialty code {code} (attempt {d['attempts']}).")
-    event(change, f"Resent to directory, attempt {d['attempts']}. Other destinations already acknowledged, not resent.")
+    d.update(status="Acknowledged", time=now(), ts=stamp(),
+             note=f"Accepted with specialty code {code} (attempt {d['attempts']}).")
+    event(change, f"Resent to directory, attempt {d['attempts']}. Provider database already acknowledged, not resent.")
     event(change, "Directory acknowledged")
     refresh_status(state, change)
     return True
@@ -362,25 +370,117 @@ def reverse(state, change):
                    status="Waiting for systems", submitted_at=now(), reverses=change["id"])
     change["reversed_by"] = c["id"]
     event(c, f"Created to reverse {change['id']}")
-    c["decision"] = {"action": "Approved", "by": "Northwind analyst", "time": now(), "note": "Reversal"}
+    c["decision"] = {"action": "Approved", "by": "Plan analyst (approver)", "time": now(), "note": "Reversal"}
     dispatch(state, c)
     return c
 
 
+# Email intake (simulated AI: keyword rules) -----------------------------------
+
+EMAIL_SAMPLE = ("Hi, Dr Mei Lin joined our East site this month and Dr Arjun Patel has left. "
+                "Thanks, Lakeview office.")
+JOIN_WORDS = r"\b(joined|joins|started|starts|hired|new)\b"
+LEAVE_WORDS = r"\b(left|leaves|leaving|resigned|retired|no longer)\b"
+
+
+def read_email(state, text):
+    """Turn a free-text email into roster rows, each with a confidence score."""
+    today = dt.date.today()
+    provs, affs = state["providers"], state["affiliations"]
+    people = {p["name"].lower(): p for p in provs.values()}
+    nh = state["new_hire"]
+    people.setdefault(nh["name"].lower(), {"name": nh["name"], "npi": nh["npi"], "specialty": "Family Medicine"})
+    matches = list(re.finditer(r"\bDr\.?\s+([A-Z][a-z]+(?:\s+[A-Z][A-Za-z-]+)+)", text))
+    items = []
+    for i, m in enumerate(matches):
+        seg = text[m.end(): matches[i + 1].start() if i + 1 < len(matches) else len(text)]
+        name = m.group(1).strip()
+        if re.search(LEAVE_WORDS, seg, re.I):
+            action = "Removed"
+        elif re.search(JOIN_WORDS, seg, re.I):
+            action = "Added"
+        else:
+            continue
+        reasons, conf = [], 95
+        person = people.get(name.lower())
+        if not person:
+            conf = min(conf, 40)
+            reasons.append("name not found in the synthetic registry")
+        site_m = re.search(r"\b(Main|North|East)\b", seg, re.I)
+        site = f"Lakeview {site_m.group(1).title()}" if site_m else ""
+        on_file = None
+        if person and action == "Removed":
+            on_file = next((a for a in affs.values() if a["practice"] == "lakeview" and a["status"] == "Active"
+                            and provs[a["provider_id"]]["npi"] == person["npi"]
+                            and (not site or SITES[a["site"]]["name"] == site)), None)
+            if on_file:
+                site = SITES[on_file["site"]]["name"]
+        if not site:
+            conf = min(conf, 60)
+            reasons.append("site not stated")
+        if re.search(r"this month", seg, re.I):
+            eff, conf = today.replace(day=1), min(conf, 85)
+            reasons.append('date read from "this month"')
+        elif re.search(r"\btoday\b", seg, re.I):
+            eff = today
+        else:
+            eff, conf = today, min(conf, 55)
+            reasons.append("no date given, assumed today")
+        row = {"name": name, "npi": person["npi"] if person else "", "site": site,
+               "specialty": person["specialty"] if person else "", "phone": "",
+               "start_date": eff.isoformat() if action == "Added" else "",
+               "status": "Active" if action == "Added" else "left", "effective_date": eff.isoformat()}
+        if on_file:
+            row.update(phone=on_file["phone"], start_date=on_file["start_date"])
+        items.append({"action": action, "name": name, "row": row, "confidence": conf,
+                      "needs_confirm": conf < CONFIDENCE_FLOOR, "reasons": reasons,
+                      "quote": (m.group(0) + seg).strip(" ,.")})
+    return items
+
+
+def email_rows(items):
+    return [[it["row"][f] for f in FIELDS] for it in items]
+
+
+IDENTITY_MAPPING = [{"header": FIELD_LABELS[f], "field": f, "confidence": 100, "needs_confirm": False} for f in FIELDS]
+
+
 # Metrics -------------------------------------------------------------------
+
+def business_days(start_iso, end_iso):
+    start, end = dt.datetime.fromisoformat(start_iso).date(), dt.datetime.fromisoformat(end_iso).date()
+    days, d = 0, start
+    while d < end:
+        d += dt.timedelta(days=1)
+        if d.weekday() < 5:
+            days += 1
+    return days
+
 
 def metrics(state):
     affs = state["affiliations"]
     active = [a for a in affs.values() if a["status"] == "Active"]
     current = [a for a in active if a["id"] in state["confirmed"] or a["id"] in state["applied_affs"]]
-    changes = [c for c in state["changes"].values() if c["source"] != "Correction" and c["route"] != "held"]
-    sent_checks = [c for c in changes if c["route"] == "sent_back"]
-    rejected = [c for c in changes if c["status"] == "Rejected by plan"]
-    released = [c for c in changes if c["route"] == "automatic" or (c["decision"] or {}).get("action") == "Approved"]
+    # A submitted change is any change record a practice sent (file or email), duplicates included.
+    submitted = [c for c in state["changes"].values() if c["source"] in ("File", "Email")]
+    failed_checks = [c for c in submitted if c.get("first_route", c["route"]) == "sent_back"]
+    held = [c for c in submitted if c.get("first_route", c["route"]) == "held"]
+    rejected = [c for c in submitted if c["status"] == "Rejected by plan"]
+    released = [c for c in submitted if c["route"] == "automatic" or (c["decision"] or {}).get("action") == "Approved"]
     applied = [c for c in released if c["status"] == "Applied"]
-    automatic = [c for c in changes if c["route"] == "automatic"]
+    automatic = [c for c in submitted if c["route"] == "automatic"]
+    dir_ts = [(c, next(d for d in c["destinations"] if d["name"] == "Directory")) for c in applied]
+    on_time = [c for c, d in dir_ts if d.get("ts") and business_days(c["released_ts"], d["ts"]) <= 2]
+    all_applied = [c for c in state["changes"].values() if c["status"] == "Applied"]
+    unauthorised = [c for c in all_applied if (c["decision"] or {}).get("action") not in ("Approved", "Automatic")]
+    reversed_applied = [c for c in state["changes"].values() if c.get("reversed_by")]
+    wrong_removals = [c for c in reversed_applied if c["type"] == "Removed"]
+    access_incidents = [c for c in state["changes"].values()
+                        if (c["decision"] or {}).get("action") in ("Approved", "Rejected")
+                        and c["decision"].get("role", "plan") != "plan"]
     confirmations = sum(len(a["scope"]) for a in state["attestations"])
     minutes = len(applied) * 15 + confirmations * 3
+    accepted = len(submitted) - len(failed_checks) - len(rejected) - len(held)
 
     def pct(n, d):
         return round(100 * n / d) if d else None
@@ -388,10 +488,13 @@ def metrics(state):
     return {
         "north_star": {"value": pct(len(current), len(active)), "n": len(current), "d": len(active)},
         "applied": {"value": pct(len(applied), len(released)), "n": len(applied), "d": len(released)},
-        "first_time": {"value": pct(len(changes) - len(sent_checks) - len(rejected), len(changes)),
-                       "n": len(changes) - len(sent_checks) - len(rejected), "d": len(changes),
-                       "checks": len(sent_checks), "plan": len(rejected)},
-        "automatic": {"value": pct(len(automatic), len(changes)), "n": len(automatic), "d": len(changes)},
+        "first_time": {"value": pct(accepted, len(submitted)), "n": accepted, "d": len(submitted),
+                       "checks": len(failed_checks), "plan": len(rejected), "held": len(held)},
+        "automatic": {"value": pct(len(automatic), len(submitted)), "n": len(automatic), "d": len(submitted)},
+        "directory_2d": {"value": pct(len(on_time), len(applied)), "n": len(on_time), "d": len(applied)},
+        "guardrails": {"unauthorised": len(unauthorised), "wrong_removals": len(wrong_removals),
+                       "errors_after_loading": len(reversed_applied), "access_incidents": len(access_incidents),
+                       "blocked": state.get("blocked_attempts", 0), "applied": len(all_applied)},
         "hours": {"value": round(minutes / 60, 1), "changes": len(applied), "confirmations": confirmations},
         "by_practice": {
             p: {"n": sum(1 for a in current if a["practice"] == p), "d": sum(1 for a in active if a["practice"] == p)}

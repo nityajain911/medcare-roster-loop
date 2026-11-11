@@ -224,3 +224,21 @@ details summary { cursor: pointer; color: var(--primary); font-weight: 500; font
 .guide-steps li.now span { background: var(--primary); color: #fff; }
 .guide-hint { font-size: 13px; font-weight: 600; color: var(--primary-dark); background: var(--tint); padding: 6px 12px; border-radius: 8px; }
 @media (max-width: 640px) { .guide-steps li { padding-right: 6px; } .guide-steps li:not(.now) { font-size: 0; gap: 0; } }
+
+/* Roles, pilot destination, intake */
+.persona-inner { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.linklike { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--primary); text-decoration: underline; cursor: pointer; }
+.readonly { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #FFF6E5; border: 1px solid #F0D49B; color: #6E4A0E; border-radius: 10px; padding: 11px 14px; margin-bottom: 16px; font-weight: 500; }
+.dest.later { opacity: .55; border-style: dashed; background: var(--background); }
+.removed-live { font-size: 13px; font-weight: 600; color: #8E2A27; }
+.sso { display: inline-block; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; margin-top: 6px; background: #fff; }
+textarea { width: 100%; min-height: 84px; resize: vertical; }
+.email-quote { background: var(--background); border-left: 3px solid var(--primary); border-radius: 6px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+.guardrails { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.guard { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.guard b { display: block; font-size: 26px; color: #3D6B0E; }
+.guard.bad b { color: #A8322F; }
+.guard span { font-size: 13px; color: var(--ink); }
+.policy td:first-child { font-weight: 600; color: var(--navy); }
+.choice { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-size: 14px; }
+.choice label { font-weight: 500; display: flex; gap: 8px; align-items: center; }

@@ -33,13 +33,16 @@
       </form>
     </div>
   </header>
-  {% if persona %}
-  <div class="persona persona-{{ persona }}">
-    <div class="wrap">Viewing as: <strong>{{ personas[persona] }}</strong>
-      {% if persona == 'plan' %}<a href="{{ url_for('plan_settings') }}" class="persona-link">Plan settings</a>{% endif %}
+  <div class="persona persona-{{ role }}">
+    <div class="wrap persona-inner">
+      <span>Viewing as: <strong>{{ roles[role].title }}</strong>, {{ roles[role].org }}</span>
+      <form method="post" action="{{ url_for('switch_role') }}" class="inline-form">
+        <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('home') }}">
+        <button class="linklike" type="submit">Switch to {{ roles['plan' if role == 'practice' else 'practice'].title }}</button>
+      </form>
+      {% if role == 'plan' %}<a href="{{ url_for('plan_settings') }}" class="persona-link">Plan settings</a>{% endif %}
     </div>
   </div>
-  {% endif %}
   <div class="guide" aria-label="Demo progress">
     <div class="wrap guide-inner">
       <ol class="guide-steps">

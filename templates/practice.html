@@ -5,6 +5,7 @@
   <div>
     <h1>Lakeview Family Practice</h1>
     <p>This is the roster {{ plan_name }} has on file for you. Confirm it is still right, or send the changes.</p>
+    <span class="sso">Thin portal inside the plan's provider portal (single sign-on)</span>
   </div>
   <div class="stats">
     <div class="stat"><b>{{ n_clinicians }}</b><span>Clinicians</span></div>
@@ -28,6 +29,21 @@
   </div>
   <p class="muted small-text" style="margin-top:10px">The sample file is a messy spreadsheet with odd column names.
     <a href="{{ url_for('sample_csv') }}">Download sample file</a></p>
+</div>
+
+<div class="card" id="email">
+  <div class="card-head">
+    <div><h2>Or paste an email <span class="sim">Simulated</span></h2>
+      <p class="muted small-text" style="margin:4px 0 0">Simulated AI reading (keyword rules stand-in) turns a plain email into roster changes. Low-confidence parts ask you to confirm.</p></div>
+  </div>
+  <form method="post" action="{{ url_for('read_email') }}">
+    <textarea name="email" id="email-text" aria-label="Email text" placeholder="Paste the email from the practice here"></textarea>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn ghost" type="button" data-sample="{{ email_sample }}"
+        onclick="document.getElementById('email-text').value = this.dataset.sample">Use sample email</button>
+      <button class="btn secondary" type="submit">Read email</button>
+    </div>
+  </form>
 </div>
 
 <div class="card">

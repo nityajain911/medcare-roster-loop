@@ -5,16 +5,17 @@
   <p>MedCare Roster Loop reads a messy roster file from a small practice, checks every row against fixed rules,
     routes each change by type, gets the plan's approval where needed, and only marks a change Applied once every
     destination system confirms it. Then it tells the practice the change is live.</p>
-  <a class="btn big" href="{{ url_for('practice') }}">Start the demo</a>
+  <a class="btn big" href="{{ url_for('practice', **{'as': 'practice'}) }}">Start the demo</a>
 </section>
 
 <h2>The loop, in six clicks</h2>
 <ol class="steps">
-  <li><b>Practice</b><span>Lakeview's office manager sees the roster on file and drops in a messy file.</span></li>
+  <li><b>Practice</b><span>Lakeview's practice admin sees the roster on file and drops in a messy file.</span></li>
   <li><b>What changed</b><span>Columns are mapped, every row is checked and routed, with a reason.</span></li>
   <li><b>Plan queue</b><span>Northwind's analyst approves the new clinician and the back-dated removal.</span></li>
-  <li><b>Reconciliation</b><span>The directory rejects one change. The analyst fixes it and resends.</span></li>
+  <li><b>Reconciliation</b><span>The provider database takes each change; the directory rejects one. The analyst fixes it and resends.</span></li>
   <li><b>Practice status</b><span>Lakeview sees each change reach Applied and go live.</span></li>
   <li><b>Dashboard</b><span>The share of records confirmed and current, computed from this demo.</span></li>
 </ol>
+<p class="muted small-text" style="margin-top:14px">Synthetic data. AI mapping and destination systems are simulated. See <a href="{{ url_for('about') }}">How it works</a>.</p>
 {% endblock %}

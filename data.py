@@ -141,6 +141,8 @@ def generate():
 
     return {
         "settings": {"phone_auto": True, "window_days": 60},
+        "role": "practice",
+        "blocked_attempts": 0,
         "providers": providers,
         "affiliations": affiliations,
         "lakeview_providers": lakeview_ids,

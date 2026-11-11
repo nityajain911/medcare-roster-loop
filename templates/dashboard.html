@@ -7,14 +7,16 @@
 
 <div class="grid grid-2">
   <div class="tile star">
-    <h3>North star: Northwind records confirmed and current</h3>
+    <h3>North star: Share of eligible records confirmed and current</h3>
     <div class="big">{{ m.north_star.value }}%</div>
     <div class="bar"><i style="width: {{ m.north_star.value }}%"></i></div>
     <div class="formula">affiliations confirmed this cycle or changed and applied / all active affiliations = {{ m.north_star.n }} / {{ m.north_star.d }}</div>
   </div>
   <div class="tile">
-    <h3>By practice</h3>
-    <div class="bars">
+    <h3>Approved changes confirmed by every destination</h3>
+    <div class="big">{{ val(m.applied.value) }}</div>
+    <div class="formula">applied (provider database and directory acknowledged) / (approved + automatic) = {{ m.applied.n }} / {{ m.applied.d }}</div>
+    <div class="bars" style="margin-top:14px">
       {% for key, p in m.by_practice.items() %}
       <div class="row"><span>{{ practices[key].name }}</span>
         <span class="track2"><i style="width: {{ (100 * p.n / p.d) | round | int if p.d else 0 }}%"></i></span>
@@ -26,15 +28,29 @@
 </div>
 
 <div class="grid grid-3" style="margin-top:16px">
-  <div class="tile"><h3>Changes confirmed by every destination</h3><div class="big">{{ val(m.applied.value) }}</div>
-    <div class="formula">applied / (approved + automatic) = {{ m.applied.n }} / {{ m.applied.d }}</div></div>
+  <div class="tile"><h3>Directory updated within 2 business days</h3><div class="big">{{ val(m.directory_2d.value) }}</div>
+    <div class="formula">applied changes the directory acknowledged within 2 business days of approval / applied changes = {{ m.directory_2d.n }} / {{ m.directory_2d.d }}</div>
+    <p class="muted small-text" style="margin-top:8px">Commercial rule, directory only. Measured from this demo's timestamps.</p></div>
   <div class="tile"><h3>Accepted first time</h3><div class="big">{{ val(m.first_time.value) }}</div>
-    <div class="formula">not sent back / submitted = {{ m.first_time.n }} / {{ m.first_time.d }}<br>failed MedCare checks: {{ m.first_time.checks }}, rejected by plan: {{ m.first_time.plan }}</div></div>
+    <div class="formula">not sent back, rejected or held / submitted = {{ m.first_time.n }} / {{ m.first_time.d }}<br>failed MedCare checks: {{ m.first_time.checks }}, rejected by plan: {{ m.first_time.plan }}, duplicates held: {{ m.first_time.held }}</div></div>
   <div class="tile"><h3>Automatic share</h3><div class="big">{{ val(m.automatic.value) }}</div>
-    <div class="formula">automatic / all changes = {{ m.automatic.n }} / {{ m.automatic.d }}</div></div>
+    <div class="formula">automatic / submitted = {{ m.automatic.n }} / {{ m.automatic.d }}</div></div>
   <div class="tile"><h3>Hours released (illustrative)</h3><div class="big">{{ m.hours.value }} h</div>
     <div class="formula">({{ m.hours.changes }} changes × 15 min + {{ m.hours.confirmations }} confirmations × 3 min) / 60</div>
     <p class="muted small-text" style="margin-top:8px">Assumption from the deck's base case; replace with the pilot plan's time study.</p></div>
+</div>
+
+<h2 style="margin-top:24px">Guardrails</h2>
+{% set gr = m.guardrails %}
+<div class="guardrails">
+  <div class="guard {{ 'bad' if gr.unauthorised }}"><b>{{ gr.unauthorised }}</b><span>Unauthorised changes</span>
+    <div class="formula">applied without plan approval or automatic policy, of {{ gr.applied }} applied</div></div>
+  <div class="guard {{ 'bad' if gr.wrong_removals }}"><b>{{ gr.wrong_removals }}</b><span>Wrong removals</span>
+    <div class="formula">applied removals later reversed</div></div>
+  <div class="guard {{ 'bad' if gr.errors_after_loading }}"><b>{{ gr.errors_after_loading }}</b><span>Errors after loading</span>
+    <div class="formula">applied changes later reversed</div></div>
+  <div class="guard {{ 'bad' if gr.access_incidents }}"><b>{{ gr.access_incidents }}</b><span>Access incidents</span>
+    <div class="formula">decisions made without the approver role; {{ gr.blocked }} attempts blocked</div></div>
 </div>
 
 <p class="muted small-text" style="margin-top:20px">Synthetic data shows the checks work. It is not evidence of real error rates.</p>
