@@ -2,9 +2,11 @@ import csv
 import datetime as dt
 import io
 import json
+import os
 import re
 import secrets
 import threading
+import time
 from collections import OrderedDict
 from functools import wraps
 from pathlib import Path
@@ -14,6 +16,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import data
 import logic
+
+# Demo dates and times follow India time, wherever the server runs.
+os.environ["TZ"] = "Asia/Kolkata"
+time.tzset()
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)

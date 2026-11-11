@@ -20,7 +20,7 @@ Sources: the original spec (`PROTOTYPE_SPEC_v1.md`), the GPT review, Claude's ow
 ## Changed or not taken
 | GPT point | Decision | Why |
 |---|---|---|
-| Drop HiLabs colours | **Kept as is (confirmed)** | GPT assumed HiLabs is a competitor. This prototype is for HiLabs, so its brand is intended |
+| Drop HiLabs colours | **Kept as is (confirmed)** | The palette matches the submitted deck's colours, so the app keeps it for consistency |
 | CSRF and Secure cookies | Skipped CSRF; kept HttpOnly and SameSite | Synthetic data, nothing to protect. Secure flag breaks local http |
 | Affiliation discrepancy (site move) | Moved to P1 | Adds rows and demo time; the two-site clinician already shows the affiliation model |
 | Exception detail view | P1; the P0 queue shows old vs new, checks and why inline | Covers most of the value without a new screen |

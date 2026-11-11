@@ -1,10 +1,50 @@
-# Prototype spec: MedCare Roster Loop (v4, as built, matches the submitted deck)
+# Prototype spec: MedCare Roster Loop (v5, as built, matches the submitted deck)
 
 Live: https://medcare-roster-loop.onrender.com · Code: https://github.com/nityajain911/medcare-roster-loop
 
 **Paste this into Claude Code, opened inside `proto_starter/`:**
 > Read CLAUDE.md and PROTOTYPE_SPEC.md. Build exactly this spec in this Flask starter, P0 first. Synthetic data only. Then run the `prototype-tester` agent, fix what it finds, and tell me when it is ready to push to GitHub and Render.
 
+
+## v5: what changed after v4 (overrides anything below that conflicts)
+**Less text on screen.** Checks show "All 5 checks passed" or only the failures plus a pass count. Unchanged rows collapse into one line. Reasons, intros, banners and formulas are shortened. Each reason appears once per page. The About page is six short cards.
+
+**Practice**
+- "Send this cycle's update" has two tabs: "Upload roster file" (sample file, CSV upload, download sample) and "Paste an email" (Simulated). "Confirm no changes" sits beside them.
+- Email: after "Read email", the email shows the extracted name, site and date as highlighted tags (Simulated). Checks say "in this email". Email-added clinicians show "NPI matched from synthetic registry by name".
+
+**What changed**
+- One summary: a stacked bar of row types with a legend. No separate count row.
+- The bad-NPI row is editable inline. The check digit and registry check rerun as you type. A pass changes the route to "Fixed · All checks pass · Counted as confirmed"; going back to an invalid NPI restores "Sent back". A "Use suggested NPI from synthetic registry (…)" link fills the box, labelled "Suggestion: check before using".
+- The duplicate has "Drop duplicate" (Undo restores it). The legend shows "Duplicate 1 (dropped)" in grey; a fixed NPI moves from Bad NPI to Unchanged.
+- The submit button shows live counts, e.g. "Submit 3 changes · 2 need a fix".
+- Inline edits survive "Confirm mapping" in either order. With both fixes: 3 changes submitted, nothing held or sent back, 7 affiliations confirmed. Without fixes, the sample file still gives 1 bad NPI sent back and 1 duplicate held.
+
+**Plan queue**
+- Banner: "N changes applied automatically under plan policy", expanding to a log.
+- A back-dated card shows a date line: requested date → window limit (today minus the window) → today, with the gap in days.
+- Changed fields show old value struck through → new value highlighted (also in audit trails).
+
+**Reconciliation**
+- A node diagram above the cards: Practice submission → Provider database → Directory. Each connector shows green (acknowledged), amber (pending) or red (failed) with counts, and pulses briefly when it changes. "Claims and prior auth" is a greyed node, "Later, shown for illustration", not counted.
+- "Reverse change" sits on every applied card for the plan analyst. Practice admins see "Plan approvers can reverse applied changes."
+
+**Practice status**
+- When the plan changes a date or rejects a change, the plan's reason shows on the card.
+- "Export confirmation (CSV)": clinician, site, change, effective date, applied time and acknowledging systems, for applied changes and confirmed records.
+
+**Dashboard**
+- Two sections: "Roster health (overall)" (north star, by practice) and "This cycle's changes" (funnel Submitted → Passed checks → Approved or automatic → Confirmed by every destination, plus the other tiles). Guardrails follow.
+- Callout when approved changes wait for directory sync, linking to Reconciliation.
+- Proposed pilot targets from slide 13 under matching tiles: accepted first time 80%, directory within 2 business days 95%, hours released "plan hours per 100 changes down 40%". Footnote: "Targets are proposed pilot go/no-go bars, set with the pilot plan." No pass or fail colouring. No tile exists for practices completing in 30 days or usability, so those targets are not shown.
+
+**Roles:** guided Next buttons switch role with a notice ("Now viewing as Plan analyst, Northwind"). The header has a green accent for the practice admin and a blue accent for the plan analyst.
+
+**Settings:** the Tax ID or billing change row notes "Production: step-up sign-in required".
+
+**About:** "Portal, roster file (upload or SFTP drop, same pipeline) and email today; CAQH and Availity later." "Directory updated within 2 business days" is under "Target (commercial rule)".
+
+**Dates:** the app uses India time (Asia/Kolkata) on any server, so "today" matches the presenter's clock.
 
 ## v4: deck alignment (overrides anything below that conflicts)
 The submitted deck is final, so the app matches it.
