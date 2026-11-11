@@ -1,25 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><h1>Plan settings</h1><p>Northwind's change-type policy. Settings apply to the next file a practice sends.</p></div></div>
+<div class="page-head"><div><h1>Plan settings</h1><p>Changes apply to the next file.</p></div></div>
 
 <div class="card">
   <h2>Change-type policy</h2>
   <div class="table-wrap"><table class="policy">
-    <thead><tr><th>Change type</th><th>Route</th><th>In this demo</th></tr></thead>
+    <thead><tr><th>Change type</th><th>Route</th><th></th></tr></thead>
     <tbody>{% for kind, route, demo in policy %}<tr><td>{{ kind }}</td><td>{{ route }}</td><td class="muted small-text">{{ demo }}</td></tr>{% endfor %}</tbody>
   </table></div>
 </div>
 
 <form method="post" class="card">
   <h2>Plan controls</h2>
-  {% if role != 'plan' %}<p class="readonly">Only plan approvers can change the policy. You are viewing as {{ roles[role].title }}.</p>{% endif %}
+  {% if role != 'plan' %}<p class="readonly">Only plan approvers can change the policy.</p>{% endif %}
   <fieldset style="border:0;padding:0;margin:0" {{ 'disabled' if role != 'plan' }}>
   <label class="toggle"><input type="checkbox" name="phone_auto" {{ 'checked' if settings.phone_auto }}>
-    <span><b>Phone changes apply automatically</b><br><span class="muted small-text">When off, phone changes go to plan review.</span></span></label>
+    <span><b>Phone changes apply automatically</b><br><span class="muted small-text">Off sends them to plan review.</span></span></label>
   <div class="field" style="margin-top:14px">
     <label for="window_days">Back-date window (days)</label>
     <input type="number" id="window_days" name="window_days" min="1" max="365" value="{{ settings.window_days }}" style="width:120px">
-    <span class="muted small-text">Changes effective further back than this are flagged for review.</span>
   </div>
   <button class="btn" type="submit">Save settings</button>
   </fieldset>

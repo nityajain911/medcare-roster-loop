@@ -161,8 +161,7 @@ def analyse(state, batch):
         r["checks"] = checks
 
         if dup_of is not None:
-            r.update(type="Duplicate", route="held",
-                     why=f"Same clinician and site appear twice. Row {row_no} repeats row {dup_of}.")
+            r.update(type="Duplicate", route="held", why=f"Repeats row {dup_of}.")
         elif not digit_ok or not in_registry:
             guess = next((a for (n, s), a in on_file.items()
                           if s == site and _norm_name(provs[a["provider_id"]]["name"]) == _norm_name(v["name"])), None)
@@ -170,14 +169,14 @@ def analyse(state, batch):
                 touched.add(guess["id"])
                 r["matched_name"] = provs[guess["provider_id"]]["name"]
             if not digit_ok:
-                why = "NPI fails the check digit."
+                why = "Check digit fails."
                 if guess:
-                    why += f" Looks like a typo of the NPI on file for {r['matched_name']}."
+                    why += f" Looks like a typo of {r['matched_name']}'s NPI on file."
             else:
-                why = "NPI not found in the synthetic registry."
-            r.update(type="Invalid", route="sent_back", why=why + " Please correct and resend.")
+                why = "NPI not in the synthetic registry."
+            r.update(type="Invalid", route="sent_back", why=why)
         elif missing:
-            r.update(route="sent_back", why="Missing required fields: " + ", ".join(missing) + ".")
+            r.update(route="sent_back", why="Missing: " + ", ".join(missing) + ".")
         elif r["type"] == "Unchanged":
             r["why"] = "Matches the record on file."
         elif r["type"] == "Removed":
@@ -185,23 +184,22 @@ def analyse(state, batch):
             r["why"] = "Removals need plan approval."
             if not in_window:
                 r["flagged"] = True
-                r["why"] += (f" Back-dated {(today - eff).days} days, beyond the {window}-day window."
-                             " Review before claims and prior auth end dates move back.")
+                r["why"] += f" Back-dated {(today - eff).days} days (window {window})."
         elif r["type"] == "Added":
-            r.update(route="plan_review", why="New clinicians always need plan approval.")
+            r.update(route="plan_review", why="New clinicians need plan approval.")
             if not in_window:
                 r["flagged"] = True
-                r["why"] += f" Effective date is outside the {window}-day window."
+                r["why"] += f" Outside the {window}-day window."
         else:
             only_phone = all(c["field"] == "phone" for c in r["changes"])
             if only_phone and state["settings"]["phone_auto"] and in_window:
-                r.update(route="automatic", why="Plan allows phone changes to apply automatically.")
+                r.update(route="automatic", why="Phone changes apply automatically.")
             elif only_phone:
-                r.update(route="plan_review", why="Plan requires review of phone changes." if not state["settings"]["phone_auto"]
-                         else f"Effective date is outside the {window}-day window, so it needs review.")
+                r.update(route="plan_review", why="Plan reviews phone changes." if not state["settings"]["phone_auto"]
+                         else f"Outside the {window}-day window.")
                 r["flagged"] = not in_window
             else:
-                r.update(route="plan_review", why="Changes to specialty, name or start date need plan review.")
+                r.update(route="plan_review", why="Specialty, name or start date changes need review.")
         if r["aff_id"]:
             touched.add(r["aff_id"])
         results.append(r)
@@ -245,11 +243,11 @@ def dispatch(state, change):
     change["released_ts"] = stamp()
     change["destinations"] = [
         {"name": "Provider database", "status": "Acknowledged", "time": now(), "ts": stamp(), "attempts": 1,
-         "note": "Stored (specialty kept as free text). Feeds the directory."},
+         "note": "Stored."},
         {"name": "Directory", "status": "Pending", "time": None, "ts": None, "attempts": 0,
-         "note": "Waiting for directory sync."},
+         "note": "Waiting for sync."},
         {"name": "Claims and prior auth", "status": "Later", "later": True, "time": None, "ts": None, "attempts": 0,
-         "note": "Later, shown for illustration. Not connected in the pilot."},
+         "note": "Later, shown for illustration."},
     ]
     event(change, "Sent to provider database and directory")
     event(change, "Provider database acknowledged")
@@ -279,8 +277,9 @@ def apply_to_roster(state, change):
     t = change["type"]
     if t == "Added":
         pid = f"P{len(provs) + 1:03d}"
-        provs[pid] = {"id": pid, "npi": change["npi"], "name": change["name"],
-                      "specialty": change["new"]["specialty"]}
+        specialty = next((n for n, code in DIRECTORY_CODES.items() if code == change.get("directory_code")),
+                         change["new"]["specialty"])
+        provs[pid] = {"id": pid, "npi": change["npi"], "name": change["name"], "specialty": specialty}
         aid = f"A{len(affs) + 1:03d}"
         affs[aid] = {"id": aid, "provider_id": pid, "practice": "lakeview", "site": change["site"],
                      "phone": change["new"]["phone"], "start_date": change["new"]["start_date"],
@@ -324,12 +323,12 @@ def run_directory_sync(state):
                 d["time"], d["ts"] = now(), stamp()
                 code = directory_code(state, c["specialty"])
                 if code:
-                    d.update(status="Acknowledged", note=f"Accepted with specialty code {code}.")
+                    d.update(status="Acknowledged", note=f"Accepted ({code}).")
                     c["directory_code"] = code
                     event(c, "Directory acknowledged")
                     acked += 1
                 else:
-                    d.update(status="Failed", note=f'Specialty "{c["specialty"]}" has no directory specialty code.')
+                    d.update(status="Failed", note="Rejected.")
                     event(c, "Directory rejected the update")
                     failed += 1
                 refresh_status(state, c)
@@ -344,7 +343,7 @@ def fix_and_resend(state, change, code):
     change["directory_code"] = code
     d["attempts"] += 1
     d.update(status="Acknowledged", time=now(), ts=stamp(),
-             note=f"Accepted with specialty code {code} (attempt {d['attempts']}).")
+             note=f"Accepted ({code}).")
     event(change, f"Resent to directory, attempt {d['attempts']}. Provider database already acknowledged, not resent.")
     event(change, "Directory acknowledged")
     refresh_status(state, change)
@@ -366,7 +365,7 @@ def reverse(state, change):
                    site=change["site"], site_name=change["site_name"], aff_id=change["aff_id"],
                    specialty=state["providers"][aff["provider_id"]]["specialty"],
                    new=new, changed_fields=fields, checks=[], route="Correction",
-                   why=f"Reverses {change['id']}. A correcting change, not a delete.", flagged=False,
+                   why=f"Reverses {change['id']}.", flagged=False,
                    status="Waiting for systems", submitted_at=now(), reverses=change["id"])
     change["reversed_by"] = c["id"]
     event(c, f"Created to reverse {change['id']}")

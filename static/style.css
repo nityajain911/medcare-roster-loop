@@ -242,3 +242,11 @@ textarea { width: 100%; min-height: 84px; resize: vertical; }
 .policy td:first-child { font-weight: 600; color: var(--navy); }
 .choice { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; font-size: 14px; }
 .choice label { font-weight: 500; display: flex; gap: 8px; align-items: center; }
+
+/* Compact summaries */
+.unchanged { margin-top: 12px; }
+.unchanged summary { color: var(--muted); font-weight: 500; }
+.unchanged p { margin: 8px 0 0; }
+.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.more summary { cursor: pointer; color: var(--primary); font-weight: 600; font-size: 14px; }
+.more form { margin-top: 10px; }

@@ -17,12 +17,13 @@
 {% macro sim() -%}<span class="sim">Simulated</span>{%- endmacro %}
 
 {% macro checks(items) -%}
-  <ul class="checks">
-  {% for c in items %}
-    <li class="check {{ 'pass' if c.ok == true else ('fail' if c.ok == false else 'na') }}" title="{{ c.detail or '' }}">
-      <span class="dot" aria-hidden="true">{{ '✓' if c.ok == true else ('✕' if c.ok == false else '·') }}</span>{{ c.label }}{% if c.detail %}<em>{{ c.detail }}</em>{% endif %}
-    </li>
+  {%- set failed = items | selectattr('ok', 'equalto', false) | list -%}
+  {%- set passed = items | selectattr('ok', 'equalto', true) | list -%}
+  <ul class="checks" title="{% for c in items %}{{ c.label }}: {{ 'pass' if c.ok == true else ('fail' if c.ok == false else 'n/a') }}{{ '&#10;' if not loop.last }}{% endfor %}">
+  {% for c in failed %}
+    <li class="check fail"><span class="dot" aria-hidden="true">✕</span>{{ c.label }}{% if c.detail %}<em>{{ c.detail }}</em>{% endif %}</li>
   {% endfor %}
+    <li class="check pass"><span class="dot" aria-hidden="true">✓</span>{{ 'All ' if not failed }}{{ passed | length }} checks passed</li>
   </ul>
 {%- endmacro %}
 

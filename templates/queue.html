@@ -4,14 +4,14 @@
 <div class="page-head">
   <div>
     <h1>Plan queue</h1>
-    <p>Changes that the plan's policy says a person must review. Each one shows the evidence and why it is here.</p>
+    <p>Changes your policy says a person must review.</p>
   </div>
-  <div class="stats"><div class="stat"><b>{{ waiting | length }}</b><span>Waiting for review</span></div></div>
+  <div class="stats"><div class="stat"><b>{{ waiting | length }}</b><span>Waiting</span></div></div>
 </div>
 
 {% set approver = role == 'plan' %}
 {% if not approver %}
-<div class="readonly">Only plan approvers can decide changes. You are viewing as {{ roles[role].title }}, so this queue is read-only.
+<div class="readonly">Only plan approvers can decide changes. Read-only view.
   <form method="post" action="{{ url_for('switch_role') }}" class="inline-form"><input type="hidden" name="next" value="{{ request.full_path }}">
     <button class="btn small" type="submit">Switch to Plan analyst (approver)</button></form>
 </div>
@@ -23,24 +23,20 @@
     <div>
       <span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }} {% if c.flagged %}<span class="flag">Back-dated</span>{% endif %}
       <h2 style="margin-top:4px">{{ c.name }}</h2>
-      <span class="muted small-text">{{ c.site_name }}, Lakeview Family Practice. Source: {{ c.source }}, row {{ c.row_no }}. Submitted {{ c.submitted_at }}.</span>
+      <span class="muted small-text">{{ c.site_name }} · {{ c.source }} row {{ c.row_no }}</span>
     </div>
     {{ chip(c.status) }}
   </div>
   <div class="grid grid-2">
     <div>
-      <h3>What the practice sent</h3>
       <div class="diff">
         {% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}
       </div>
-      {% if c.type == 'Removed' %}<p class="muted small-text" style="margin-top:6px">Affected systems: provider database, directory (claims and prior auth later)</p>{% endif %}
-      {% if c.type == 'Added' %}<p class="muted small-text" style="margin-top:6px">Specialty: {{ c.new.specialty }}. Phone: {{ c.new.phone or 'not given' }}. Start date: {{ c.new.start_date }}.</p>{% endif %}
-      <div class="why"><b>Why it is here:</b> {{ c.why }}</div>
+      <div class="why"><b>Why here:</b> {{ c.why }}</div>
+      {% if c.type == 'Removed' %}<p class="muted small-text" style="margin:6px 0 0">Affected systems: provider database, directory (claims and prior auth later)</p>{% endif %}
+      {% if c.flagged and c.type == 'Removed' %}<p class="small-text" style="margin:4px 0 0;color:#8A5A12">The original date would also move claims and prior auth end dates back.</p>{% endif %}
     </div>
-    <div>
-      <h3>MedCare checks</h3>
-      {{ checks(c.checks) }}
-    </div>
+    <div>{{ checks(c.checks) }}</div>
   </div>
   {% if approver %}
   <div class="grid grid-2" style="margin-top:16px">
@@ -53,12 +49,12 @@
       {% endif %}
       <div class="inline-form">
         <input type="text" name="note" aria-label="Approval note"
-               placeholder="{{ 'Reason for the audit trail (required for a back-dated change)' if c.flagged else 'Optional note for the audit trail' }}">
+               placeholder="{{ 'Reason (required for a back-dated change)' if c.flagged else 'Optional note for the audit trail' }}">
         <button class="btn" type="submit">Approve change</button>
       </div>
     </form>
     <form method="post" action="{{ url_for('reject', cid=c.id) }}" class="inline-form" style="align-self:end">
-      <input type="text" name="reason" placeholder="Reason the practice will see (required)" aria-label="Rejection reason">
+      <input type="text" name="reason" placeholder="Reason for the practice (required)" aria-label="Rejection reason">
       <button class="btn danger" type="submit">Reject change</button>
     </form>
   </div>
@@ -66,8 +62,8 @@
 </div>
 {% else %}
 <div class="card empty">
-  Nothing waiting for review.
-  {% if not decided %}<br><a href="{{ url_for('practice') }}">Start from the practice view</a> and submit the sample file.{% else %}<br><a href="{{ url_for('reconcile') }}">Go to reconciliation</a> to see where approved changes have reached.{% endif %}
+  Nothing waiting.
+  {% if decided %}<a href="{{ url_for('reconcile') }}">Go to reconciliation</a>{% endif %}
 </div>
 {% endfor %}
 
@@ -75,11 +71,11 @@
 <div class="card">
   <h2>Decided</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>Change</th><th>Clinician</th><th>Decision</th><th>Note</th><th>Now</th></tr></thead>
+    <thead><tr><th>Change</th><th>Clinician</th><th>Decision</th><th>Now</th></tr></thead>
     <tbody>{% for c in decided %}
-      <tr><td class="mono">{{ c.id }}</td><td>{{ c.name }} <span class="muted small-text">{{ c.type }}</span></td>
-        <td>{{ c.decision.action }} <span class="muted small-text">{{ c.decision.time }}</span></td>
-        <td>{{ c.date_choice or '' }} {{ c.decision.note or '' }}</td><td>{{ chip(c.status) }}</td></tr>
+      <tr><td class="mono">{{ c.id }}</td><td>{{ c.name }}</td>
+        <td>{{ c.decision.action }}{% if c.decision.note %} <span class="muted small-text">"{{ c.decision.note }}"</span>{% endif %}</td>
+        <td>{{ chip(c.status) }}</td></tr>
     {% endfor %}</tbody>
   </table></div>
 </div>

@@ -1,35 +1,35 @@
 {% extends "base.html" %}
 {% from "_ui.html" import chip, sim, type_chip %}
 {% block content %}
+{% set approver = role == 'plan' %}
 <div class="page-head">
   <div>
     <h1>Reconciliation</h1>
-    <p>Pilot destination: the plan's provider database, which feeds the directory. A change is Applied only when both acknowledge it. Destination systems are simulated. {{ sim() }}</p>
+    <p>Applied means the provider database and the directory both confirmed. {{ sim() }}</p>
   </div>
-  {% set approver = role == 'plan' %}
   <form method="post" action="{{ url_for('sync') }}">
     <button class="btn big" type="submit" {{ 'disabled' if not pending or not approver }}>Run directory sync</button>
-    <div class="muted small-text" style="margin-top:4px">{{ pending }} waiting for the directory</div>
+    <div class="muted small-text" style="margin-top:4px">{{ pending }} waiting</div>
   </form>
 </div>
 
 {% if not approver %}
-<div class="readonly">Only plan approvers can sync, fix or reverse changes. You are viewing as {{ roles[role].title }}, so this page is read-only.
+<div class="readonly">Only plan approvers can decide changes. Read-only view.
   <form method="post" action="{{ url_for('switch_role') }}" class="inline-form"><input type="hidden" name="next" value="{{ request.full_path }}">
     <button class="btn small" type="submit">Switch to Plan analyst (approver)</button></form>
 </div>
 {% endif %}
 
 {% for c in changes %}
+{% set req = c.destinations | rejectattr('later') | list %}
+{% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
 <div class="card" id="{{ c.id }}">
   <div class="card-head">
     <div>
       <span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }}
       <h2 style="margin-top:4px">{{ c.name }}</h2>
-      <span class="muted small-text">{{ c.site_name }}. {{ c.why }}</span>
+      <span class="muted small-text">{{ c.site_name }}{% if c.reverses %} · reverses {{ c.reverses }}{% endif %}{% if c.reversed_by %} · reversed by {{ c.reversed_by }}{% endif %}</span>
     </div>
-    {% set req = c.destinations | rejectattr('later') | list %}
-    {% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
     <div style="text-align:right">{{ chip(c.status) }}
       <div class="muted small-text">{{ req | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ req | length }} systems updated</div>
       {% if c.type == 'Removed' and dirdest.status == 'Acknowledged' %}<div class="removed-live">Removed from directory</div>{% endif %}</div>
@@ -38,66 +38,51 @@
   <div class="dests">
     {% for d in c.destinations %}
     <div class="dest {{ 'later' if d.later else ('ok' if d.status == 'Acknowledged' else ('failed' if d.status == 'Failed' else '')) }}">
-      <div class="dest-head"><span>{{ d.name }} {{ sim() }}</span>{{ chip(d.status) }}</div>
-      <p>{{ d.note }}</p>
-      {% if not d.later %}<p>{% if d.time %}{{ d.time }}. {% endif %}Attempts: {{ d.attempts }}</p>{% endif %}
+      <div class="dest-head"><span>{{ d.name }}</span>{{ chip(d.status) }}</div>
+      <p>{{ d.note }}{% if d.time %} {{ d.time }}{% endif %}{% if d.attempts > 1 %} · attempt {{ d.attempts }}{% endif %}</p>
     </div>
     {% endfor %}
   </div>
 
   {% if dirdest and dirdest.status == 'Failed' %}
+  {% set suggested = registry_codes.get(c.npi) %}
   <div class="failbox">
-    <h3>Directory rejected the update. Provider database acknowledged it.</h3>
-    <p><b>Reason:</b> Specialty "{{ c.specialty }}" has no directory specialty code. The file passed MedCare's checks; the directory has its own rule.</p>
-    {% set suggested = registry_codes.get(c.npi) %}
-    <p><b>Fix:</b> {% if suggested %}The synthetic registry lists this clinician as <b>{{ suggested }}</b>. Check it and resend.{% else %}Pick the matching code and resend.{% endif %} Only the directory is sent it again.</p>
-    {% if approver %}<form method="post" action="{{ url_for('resend', cid=c.id) }}" class="inline-form">
+    <h3>Directory rejected this change</h3>
+    <p>It passed MedCare's checks, but the directory needs a specialty code for "{{ c.specialty }}".</p>
+    {% if approver %}
+    <form method="post" action="{{ url_for('resend', cid=c.id) }}" class="inline-form">
       <select name="code" aria-label="Directory specialty code">
-        <option value="">Pick a directory specialty code</option>
-        {% for name, code in codes.items() %}<option value="{{ code }}" {{ 'selected' if code == suggested }}>{{ name }} ({{ code }}){{ ', suggested from synthetic registry' if code == suggested }}</option>{% endfor %}
+        <option value="">Pick a specialty code</option>
+        {% for name, code in codes.items() %}<option value="{{ code }}" {{ 'selected' if code == suggested }}>{{ name }} ({{ code }}){{ ', suggested from registry' if code == suggested }}</option>{% endfor %}
       </select>
       <button class="btn" type="submit">Fix and resend</button>
-    </form>{% endif %}
-    <p class="muted small-text" style="margin-top:8px">Directory specialty codes: illustrative subset of NUCC taxonomy codes.</p>
+    </form>
+    {% endif %}
   </div>
   {% endif %}
   {% if c.directory_code and c.specialty in saved_map %}
-    <p class="muted small-text">Saved mapping: {{ c.specialty }} → {{ saved_map[c.specialty] }}. Future files use it automatically.</p>
+    <p class="muted small-text">Saved: {{ c.specialty }} → {{ saved_map[c.specialty] }} for future files.</p>
   {% endif %}
-
-  {% if c.reverses %}<p class="small-text"><span class="chip chip-blue">Correction</span> Reverses <a href="#{{ c.reverses }}">{{ c.reverses }}</a>. The original stays in the audit trail.</p>{% endif %}
-  {% if c.reversed_by %}<p class="small-text"><span class="chip chip-grey">Reversed</span> by <a href="#{{ c.reversed_by }}">{{ c.reversed_by }}</a>. Nothing was deleted.</p>{% endif %}
 
   <details>
     <summary>Audit trail{% if c.version %} ({{ c.version }}){% endif %}</summary>
     <div class="table-wrap"><table class="record">
-      <tr><th>Change id</th><td class="mono">{{ c.id }}</td></tr>
       <tr><th>Record version</th><td>{{ c.version or 'Not applied yet' }}</td></tr>
       {% if c.date_choice %}<tr><th>Back-date choice</th><td>{{ c.date_choice }}{% if c.decision and c.decision.note %} Reason: {{ c.decision.note }}{% endif %}</td></tr>{% endif %}
-      <tr><th>Source</th><td>{{ c.source }}{% if c.row_no %}, row {{ c.row_no }} of {{ c.batch_id }}{% endif %}</td></tr>
+      <tr><th>Source</th><td>{{ c.source }}{% if c.row_no %}, row {{ c.row_no }}{% endif %}</td></tr>
       <tr><th>Old → new</th><td class="diff">{% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}</td></tr>
-      <tr><th>Checks</th><td>{% for k in c.checks %}{{ k.label }}: {{ 'pass' if k.ok == true else ('fail' if k.ok == false else 'n/a') }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
-      <tr><th>Route</th><td>{{ c.route | replace('_', ' ') }}. {{ c.why }}</td></tr>
-      <tr><th>Decision</th><td>{% if c.decision %}{{ c.decision.action }} by {{ c.decision.by }}, {{ c.decision.time }}{% if c.decision.note %}. Note: {{ c.decision.note }}{% endif %}{% endif %}</td></tr>
-      <tr><th>Destinations</th><td>{% for d in c.destinations %}{{ d.name }}{{ ' (later)' if d.later }}: {{ d.status }}{% if d.time %} at {{ d.time }}{% endif %}, attempts {{ d.attempts }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
-      <tr><th>Final status</th><td>{{ c.status }}</td></tr>
+      <tr><th>Checks</th><td>{% set fails = c.checks | selectattr('ok', 'equalto', false) | list %}{% if c.checks %}{{ c.checks | selectattr('ok', 'equalto', true) | list | length }} passed{% for k in fails %}; failed: {{ k.label }}{% endfor %}{% else %}n/a{% endif %}</td></tr>
+      <tr><th>Decision</th><td>{% if c.decision %}{{ c.decision.action }} by {{ c.decision.by }}, {{ c.decision.time }}{% if c.decision.note and not c.date_choice %}. "{{ c.decision.note }}"{% endif %}{% endif %}</td></tr>
     </table></div>
     <ul class="events">{% for e in c.events %}<li>{{ e.time }}: <b>{{ e.label }}</b></li>{% endfor %}</ul>
     {% if approver and c.status == 'Applied' and not c.reversed_by and c.source != 'Correction' %}
     <form method="post" action="{{ url_for('reverse', cid=c.id) }}" style="margin-top:10px">
       <button class="btn ghost small" type="submit">Reverse change</button>
-      <span class="muted small-text">Creates a correcting change that the provider database and directory must acknowledge again.</span>
     </form>
     {% endif %}
   </details>
 </div>
 {% else %}
-<div class="card empty">No changes have been sent to destination systems yet.<br>
-  <a href="{{ url_for('plan_queue') }}">Approve changes in the plan queue</a> first.</div>
+<div class="card empty">Nothing sent yet. <a href="{{ url_for('plan_queue') }}">Approve changes in the plan queue</a> first.</div>
 {% endfor %}
-
-{% if changes and not pending and changes | selectattr('status', 'equalto', 'Applied') | list | length == changes | length %}
-<div class="card tight btn-row"><span class="chip chip-green">All changes applied</span>
-  <a class="btn" href="{{ url_for('practice_status') }}">See what Lakeview sees</a></div>
-{% endif %}
 {% endblock %}

@@ -1,56 +1,48 @@
 {% extends "base.html" %}
-{% from "_ui.html" import chip %}
+{% from "_ui.html" import chip, sim %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Lakeview Family Practice</h1>
-    <p>This is the roster {{ plan_name }} has on file for you. Confirm it is still right, or send the changes.</p>
+    <p>Your roster on file with {{ plan_name }}.</p>
     <span class="sso">Thin portal inside the plan's provider portal (single sign-on)</span>
   </div>
   <div class="stats">
     <div class="stat"><b>{{ n_clinicians }}</b><span>Clinicians</span></div>
-    <div class="stat"><b>{{ n_active }}</b><span>Affiliations</span></div>
     <div class="stat"><b>3</b><span>Sites</span></div>
-    <div class="stat"><b>{{ n_confirmed }}/{{ n_active }}</b><span>Confirmed this cycle</span></div>
+    <div class="stat"><b>{{ n_confirmed }}/{{ n_active }}</b><span>Confirmed</span></div>
   </div>
 </div>
 
 <div class="card">
-  <div class="card-head">
-    <h2>Send this cycle's update</h2>
-  </div>
-  <div class="btn-row">
+  <h2>Send this cycle's update</h2>
+  <div class="btn-row" style="margin-top:12px">
     <form method="post" action="{{ url_for('use_sample') }}"><button class="btn" type="submit">Use sample file</button></form>
     <a class="btn secondary" href="{{ url_for('confirm') }}">Confirm no changes</a>
     <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="inline-form">
       <input type="file" name="file" accept=".csv,text/csv" aria-label="Roster CSV file">
       <button class="btn ghost" type="submit">Upload a CSV</button>
     </form>
+    <a class="small-text" href="{{ url_for('sample_csv') }}">Download sample</a>
   </div>
-  <p class="muted small-text" style="margin-top:10px">The sample file is a messy spreadsheet with odd column names.
-    <a href="{{ url_for('sample_csv') }}">Download sample file</a></p>
-</div>
-
-<div class="card" id="email">
-  <div class="card-head">
-    <div><h2>Or paste an email <span class="sim">Simulated</span></h2>
-      <p class="muted small-text" style="margin:4px 0 0">Simulated AI reading (keyword rules stand-in) turns a plain email into roster changes. Low-confidence parts ask you to confirm.</p></div>
-  </div>
-  <form method="post" action="{{ url_for('read_email') }}">
-    <textarea name="email" id="email-text" aria-label="Email text" placeholder="Paste the email from the practice here"></textarea>
-    <div class="btn-row" style="margin-top:10px">
-      <button class="btn ghost" type="button" data-sample="{{ email_sample }}"
-        onclick="document.getElementById('email-text').value = this.dataset.sample">Use sample email</button>
-      <button class="btn secondary" type="submit">Read email</button>
-    </div>
-  </form>
+  <details class="more" id="email">
+    <summary>Or paste an email {{ sim() }}</summary>
+    <form method="post" action="{{ url_for('read_email') }}">
+      <textarea name="email" id="email-text" aria-label="Email text" placeholder="Paste the practice's email here"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn ghost" type="button" data-sample="{{ email_sample }}"
+          onclick="document.getElementById('email-text').value = this.dataset.sample">Use sample email</button>
+        <button class="btn secondary" type="submit">Read email</button>
+      </div>
+    </form>
+  </details>
 </div>
 
 <div class="card">
-  <div class="card-head"><h2>Roster on file</h2><span class="muted small-text">One row per clinician and site</span></div>
+  <h2>Roster on file</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Clinician</th><th>NPI</th><th>Specialty</th><th>Site</th><th>Phone</th><th>Start date</th><th>Status</th><th>This cycle</th></tr></thead>
+      <thead><tr><th>Clinician</th><th>NPI</th><th>Specialty</th><th>Site</th><th>Phone</th><th>Status</th></tr></thead>
       <tbody>
       {% for r in roster %}
         <tr class="{{ 'row-quiet' if r.status != 'Active' }}">
@@ -59,9 +51,7 @@
           <td>{{ r.specialty }}</td>
           <td>{{ r.site_name }}</td>
           <td>{{ r.phone }}</td>
-          <td>{{ r.start_date }}</td>
-          <td>{{ r.status }}{% if r.end_date %} <span class="muted small-text">from {{ r.end_date }}</span>{% endif %}</td>
-          <td>{% if r.status != 'Active' %}<span class="muted small-text">Removed</span>{% elif r.confirmed %}<span class="chip chip-green">Confirmed</span>{% else %}<span class="chip chip-grey">Not yet</span>{% endif %}</td>
+          <td>{% if r.status != 'Active' %}<span class="muted small-text">Left {{ r.end_date }}</span>{% elif r.confirmed %}<span class="chip chip-green">Confirmed</span>{% else %}Active{% endif %}</td>
         </tr>
       {% endfor %}
       </tbody>

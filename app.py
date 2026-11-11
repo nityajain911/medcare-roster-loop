@@ -124,7 +124,7 @@ def approver_only(view):
     def wrapped(*args, **kwargs):
         if g.state["role"] != "plan":
             g.state["blocked_attempts"] = g.state.get("blocked_attempts", 0) + 1
-            flash("Only plan approvers can decide changes. Switch to Plan analyst (approver) to continue.", "error")
+            flash("Only plan approvers can decide changes.", "error")
             return redirect(request.referrer or url_for("plan_queue"))
         return view(*args, **kwargs)
     return wrapped
@@ -248,7 +248,7 @@ def confirm():
         for aid in scope:
             s["confirmed"][aid] = {"time": t, "by": actor(), "source": "Confirmation"}
         s["attestations"].append({"time": t, "by": actor(), "scope": scope, "source": "Confirm no changes"})
-        flash(f"Confirmation recorded for {len(scope)} affiliations at {t}.", "success")
+        flash(f"{len(scope)} affiliations confirmed.", "success")
         return redirect(url_for("practice"))
     return render_template("confirm.html", active="practice", area="practice", roster=roster,
                            open_changes=open_changes,
@@ -268,7 +268,7 @@ def analyse(batch, exclude=None):
         for r in result["rows"]:
             cid = keys.get((r["npi"], r["site"]))
             if cid and r["route"] in ("automatic", "plan_review"):
-                r.update(route="held", why=f"Already in progress as {cid}. Not submitted again.")
+                r.update(route="held", why=f"Already in progress ({cid}).")
     return result
 
 
@@ -335,7 +335,6 @@ def confirm_mapping(bid):
             item["confirmed_by_person"] = item["needs_confirm"]
         batch["rows"] = logic.email_rows(batch["items"])
         batch["mapping_confirmed"] = True
-        flash("Confirmed what the AI read.", "success")
         return redirect(url_for("review", bid=bid) + "#changes")
     for i, m in enumerate(batch["mapping"]):
         choice = request.form.get(f"field_{i}")
@@ -344,7 +343,6 @@ def confirm_mapping(bid):
                 m["field"], m["confidence"] = choice, 100
             m["confirmed_by_person"] = m["needs_confirm"] or m.get("confirmed_by_person", False)
     batch["mapping_confirmed"] = True
-    flash("Column mapping confirmed.", "success")
     return redirect(url_for("review", bid=bid) + "#changes")
 
 
@@ -385,9 +383,7 @@ def submit(bid):
     held_n = sum(1 for c in created if c["route"] == "held")
     msg = f"Submitted {len(created)} changes"
     msg += f" ({held_n} duplicate held)." if held_n else "."
-    msg += f" {review_n} went to the plan for review."
-    if scope:
-        msg += f" {len(scope)} unchanged affiliations were confirmed."
+    msg += f" {review_n} need plan review."
     flash(msg, "success")
     return redirect(url_for("practice_status"))
 
@@ -414,13 +410,13 @@ def correct_npi(cid):
     if r["route"] == "none":
         s["confirmed"][r["aff_id"]] = {"time": t, "by": actor(), "source": "Correction"}
         s["attestations"].append({"time": t, "by": actor(), "scope": [r["aff_id"]], "source": f"Corrected {cid}"})
-        c["why"] = "NPI corrected. Matches the record on file, so it counts as confirmed."
-        flash(f"{cid}: NPI corrected. It matches the record on file and counts as confirmed.", "success")
+        c["why"] = "NPI corrected. Matches the record on file."
+        flash(f"{cid}: NPI corrected and confirmed.", "success")
     elif r["route"] == "sent_back":
-        flash(f"{cid}: still sent back. {r['why']}", "error")
+        flash(f"{cid}: still fails. {r['why']}", "error")
     else:
         route_change(s, c, t)
-        flash(f"{cid}: NPI corrected and routed: {r['why']}", "success")
+        flash(f"{cid}: NPI corrected. {r['why']}", "success")
     return redirect(url_for("practice_status") + f"#{cid}")
 
 
@@ -430,7 +426,7 @@ def remove_duplicate(cid):
     if c["status"] == "Held" and c["type"] == "Duplicate":
         c["status"] = "Duplicate removed"
         logic.event(c, "Duplicate row removed by practice")
-        flash(f"{cid}: duplicate row removed. Nothing else changes.", "success")
+        flash(f"{cid}: duplicate removed.", "success")
     return redirect(url_for("practice_status") + f"#{cid}")
 
 
@@ -473,7 +469,7 @@ def approve(cid):
     c["decision"] = {"action": "Approved", "by": actor(), "role": "plan", "time": logic.now(), "note": note}
     logic.event(c, "Approved by Northwind" + (f": {note}" if note else ""))
     logic.dispatch(g.state, c)
-    flash(f"{cid} approved and sent to the provider database and directory.", "success")
+    flash(f"{cid} approved.", "success")
     return redirect(url_for("plan_queue"))
 
 
@@ -490,7 +486,7 @@ def reject(cid):
     c["decision"] = {"action": "Rejected", "by": actor(), "role": "plan", "time": logic.now(), "note": reason}
     c["status"] = "Rejected by plan"
     logic.event(c, f"Sent back by plan: {reason}")
-    flash(f"{cid} rejected. Lakeview will see the reason.", "success")
+    flash(f"{cid} rejected. The practice sees your reason.", "success")
     return redirect(url_for("plan_queue"))
 
 
@@ -525,7 +521,7 @@ def resend(cid):
         flash("Pick a directory specialty code first.", "error")
         return redirect(url_for("reconcile") + f"#{cid}")
     if logic.fix_and_resend(g.state, c, code):
-        flash(f"{cid} resent to the directory and acknowledged. Status: {c['status']}.", "success")
+        flash(f"{cid} resent. Now {c['status']}.", "success")
     return redirect(url_for("reconcile") + f"#{cid}")
 
 
@@ -536,18 +532,18 @@ def reverse(cid):
     if c["status"] != "Applied" or c["reversed_by"] or c["source"] == "Correction":
         return redirect(url_for("reconcile"))
     new = logic.reverse(g.state, c)
-    flash(f"Created {new['id']} to reverse {cid}. The provider database and directory must acknowledge it.", "success")
+    flash(f"{new['id']} created to reverse {cid}.", "success")
     return redirect(url_for("reconcile") + f"#{new['id']}")
 
 
 POLICY = [
-    ("No change confirmation", "Recorded with who, when and scope", "Live"),
-    ("Phone or hours change", "Automatic if the plan allows it, else plan review", "Live (toggle below). Hours are not in the sample file"),
-    ("New clinician", "Plan review", "Live"),
-    ("Removal", "Plan review; flagged if back-dated beyond the window", "Live"),
-    ("Tax ID or billing change", "Plan review with extra checks", "Policy only. Not in the sample file"),
-    ("Failed NPI check", "Sent back to the practice with the reason", "Live"),
-    ("Duplicate or conflict", "Held and escalated", "Live"),
+    ("No change confirmation", "Recorded", ""),
+    ("Phone or hours change", "Automatic if allowed, else plan review", "Toggle below"),
+    ("New clinician", "Plan review", ""),
+    ("Removal", "Plan review, flagged if back-dated", ""),
+    ("Tax ID or billing change", "Plan review with extra checks", "Not in sample data"),
+    ("Failed NPI check", "Sent back", ""),
+    ("Duplicate or conflict", "Held and escalated", ""),
 ]
 
 
@@ -568,7 +564,7 @@ def plan_settings():
         except ValueError:
             flash("The back-date window must be a whole number from 1 to 365.", "error")
             return redirect(url_for("plan_settings"))
-        flash("Settings saved. They apply to the next file.", "success")
+        flash("Settings saved.", "success")
         return redirect(url_for("plan_settings"))
     return render_template("settings.html", active="plan_queue", area="plan", policy=POLICY)
 

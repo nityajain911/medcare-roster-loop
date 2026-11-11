@@ -98,7 +98,7 @@ def main():
     assert (gr["unauthorised"], gr["wrong_removals"], gr["errors_after_loading"], gr["access_incidents"]) == (0, 0, 0, 0)
     assert gr["blocked"] == 1
     dash = text(c.get("/dashboard?as=plan"))
-    assert "Share of eligible records confirmed and current" in dash and "duplicates held: 1" in dash
+    assert "Share of eligible records confirmed and current" in dash and "Duplicates held: 1" in dash
     assert "Directory updated within 2 business days" in dash and "Commercial rule, directory only" in dash
     assert webapp.next_step(s)[0] == 7
 

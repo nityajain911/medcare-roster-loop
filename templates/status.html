@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Your changes</h1>
-    <p>Every change you sent to {{ plan_name }}, and how far it has got. "Live in directory" appears only after the directory confirms it.</p>
+    <p>Where each change has got to.</p>
   </div>
 </div>
 
@@ -16,7 +16,7 @@
   <div class="card-head">
     <div><span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }}
       <h2 style="margin-top:4px">{{ c.name }}</h2>
-      <span class="muted small-text">{{ c.site_name }}. Sent by {{ c.source | lower }}.</span></div>
+      <span class="muted small-text">{{ c.site_name }}</span></div>
     <div style="text-align:right">{{ chip(c.status) }}<br>
       {% if dirdest and dirdest.status == 'Acknowledged' %}
         {% if c.type == 'Removed' %}<span class="removed-live">Removed from directory</span>{% else %}<span class="live">Live in directory</span>{% endif %}
@@ -24,49 +24,46 @@
     </div>
   </div>
   {% if closed %}
-    <div class="reason" {% if c.status in ['Confirmed', 'Duplicate removed'] %}style="background:#EEF6E4;color:#35560F"{% endif %}>
-      {% if c.status == 'Rejected by plan' %}Sent back by plan: {{ c.decision.note }}
-      {% elif c.status == 'Sent back' %}Sent back by MedCare checks: {{ c.why }}
-      {% elif c.status == 'Confirmed' %}{{ c.why }}
-      {% elif c.status == 'Duplicate removed' %}Duplicate row removed. The first row was already counted.
-      {% else %}Held: {{ c.why }}{% endif %}
-    </div>
     {% if c.status == 'Sent back' %}
-    <form method="post" action="{{ url_for('correct_npi', cid=c.id) }}" class="inline-form" style="margin-top:10px">
-      <label for="npi-{{ c.id }}" class="small-text">Corrected NPI</label>
-      <input type="text" id="npi-{{ c.id }}" name="npi" inputmode="numeric" maxlength="10" value="{{ c.npi }}" style="max-width:150px">
-      <button class="btn small" type="submit">Check again and resend</button>
-      {% if c.matched_name %}<span class="muted small-text">Tip: compare with the NPI on file for {{ c.matched_name }} on the Practice page.</span>{% endif %}
-    </form>
+      <div class="reason">{{ c.why }}</div>
+      <form method="post" action="{{ url_for('correct_npi', cid=c.id) }}" class="inline-form" style="margin-top:10px">
+        <label for="npi-{{ c.id }}" class="small-text">Corrected NPI</label>
+        <input type="text" id="npi-{{ c.id }}" name="npi" inputmode="numeric" maxlength="10" value="{{ c.npi }}" style="max-width:150px">
+        <button class="btn small" type="submit">Check again and resend</button>
+      </form>
     {% elif c.status == 'Held' and c.type == 'Duplicate' %}
-    <form method="post" action="{{ url_for('remove_duplicate', cid=c.id) }}" style="margin-top:10px">
-      <button class="btn small ghost" type="submit">Remove duplicate row</button>
-    </form>
+      <div class="reason">{{ c.why }}</div>
+      <form method="post" action="{{ url_for('remove_duplicate', cid=c.id) }}" style="margin-top:10px">
+        <button class="btn small ghost" type="submit">Remove duplicate row</button>
+      </form>
+    {% elif c.status == 'Rejected by plan' %}
+      <div class="reason">Plan's reason: {{ c.decision.note }}</div>
+    {% elif c.status == 'Held' %}
+      <div class="reason">{{ c.why }}</div>
+    {% else %}
+      <p class="small-text muted" style="margin:0">{{ c.why if c.status == 'Confirmed' else 'Duplicate row removed.' }}</p>
     {% endif %}
   {% else %}
   <div class="track">
     <div class="stage done"><b>Submitted</b><span>{{ c.submitted_at }}</span></div>
-    <div class="stage done"><b>Checked</b><span>{{ c.checked_at }}</span></div>
+    <div class="stage done"><b>Checked</b></div>
     {% if c.route == 'automatic' %}
-      <div class="stage done"><b>Automatic</b><span>Plan policy</span></div>
+      <div class="stage done"><b>Automatic</b></div>
     {% elif c.decision %}
       <div class="stage done"><b>Approved</b><span>{{ c.decision.time }}</span></div>
     {% else %}
-      <div class="stage"><b>Approved</b><span>Waiting for plan review</span></div>
+      <div class="stage"><b>Approved</b><span>Waiting for the plan</span></div>
     {% endif %}
     <div class="stage {{ 'done' if c.status == 'Applied' else ('warn' if c.status == 'Partially applied' else '') }}">
-      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif req %}{{ req | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ req | length }} systems updated{% else %}Not yet{% endif %}</span></div>
+      <b>Applied</b>{% if c.status == 'Applied' %}<span>{{ c.applied_at }}</span>{% endif %}</div>
   </div>
   {% endif %}
 </div>
 {% else %}
-<div class="card empty">You have not sent any changes yet. <a href="{{ url_for('practice') }}">Go to the practice view</a>.</div>
+<div class="card empty">No changes sent yet. <a href="{{ url_for('practice') }}">Go to the practice view</a>.</div>
 {% endfor %}
 
 {% if attestations %}
-<div class="card">
-  <h2>Confirmations</h2>
-  <ul class="events">{% for a in attestations %}<li>{{ a.time }}: <b>{{ a.scope | length }} affiliations confirmed</b> by {{ a.by }} ({{ a.source }})</li>{% endfor %}</ul>
-</div>
+<p class="muted small-text">{% for a in attestations %}{{ a.scope | length }} affiliations confirmed {{ a.time }}{{ '; ' if not loop.last else '.' }}{% endfor %}</p>
 {% endif %}
 {% endblock %}
