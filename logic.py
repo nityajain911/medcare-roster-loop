@@ -83,6 +83,17 @@ def _norm_name(s):
     return re.sub(r"^(dr\.?\s+)", "", (s or "").strip(), flags=re.I).lower()
 
 
+def canon_specialty(state, s):
+    """The directory name for a specialty, using saved mappings, so "Family Med" and "Family Medicine" match."""
+    code = DIRECTORY_CODES.get(s) or state["saved_specialty_map"].get(s)
+    return next((n for n, c in DIRECTORY_CODES.items() if c == code), s) if code else s
+
+
+def _days_text(today, eff):
+    delta = (today - eff).days
+    return f"{delta} days ago" if delta >= 0 else f"in {-delta} days"
+
+
 def _status(s):
     v = (s or "").strip().lower()
     if v in REMOVAL_WORDS:
@@ -138,11 +149,17 @@ def analyse(state, batch):
                 for f, old, new in (("name", p["name"], v["name"]), ("specialty", p["specialty"], v["specialty"]),
                                     ("phone", existing["phone"], v["phone"]),
                                     ("start_date", existing["start_date"], r["start_date"])):
-                    if _norm_name(old) != _norm_name(new) if f == "name" else old != new:
+                    if f == "name":
+                        differs = _norm_name(old) != _norm_name(new)
+                    elif f == "specialty":
+                        differs = canon_specialty(state, old) != canon_specialty(state, new)
+                    else:
+                        differs = old != new
+                    if differs:
                         r["changes"].append({"field": f, "label": FIELD_LABELS[f], "old": old, "new": new})
                 r["type"] = "Changed" if r["changes"] else "Unchanged"
         else:
-            r["type"] = "Added"
+            r["type"] = "Removed" if status == "Removed" else "Added"
         # A row with a bad NPI can't be matched, so it is not treated as a change.
         is_change = r["type"] != "Unchanged" and digit_ok and in_registry
 
@@ -157,7 +174,7 @@ def analyse(state, batch):
              "detail": ("Missing: " + ", ".join(missing)) if missing else ""},
             {"label": f"Not a duplicate in this {noun}", "ok": dup_of is None},
             {"label": "Effective date inside the plan's window", "ok": in_window if is_change and eff else None,
-             "detail": "" if not (is_change and eff) else f"{abs((today - eff).days)} days ago, window {window} days"},
+             "detail": "" if not (is_change and eff) else f"{_days_text(today, eff)}, window {window} days"},
         ]
         r["checks"] = checks
 
@@ -177,6 +194,8 @@ def analyse(state, batch):
             else:
                 why = "NPI not in the synthetic registry."
             r.update(type="Invalid", route="sent_back", why=why)
+        elif r["type"] == "Removed" and not existing:
+            r.update(route="sent_back", why="Not on the roster at this site, so there is nothing to remove.")
         elif missing:
             r.update(route="sent_back", why="Missing: " + ", ".join(missing) + ".")
         elif r["type"] == "Unchanged":
@@ -186,7 +205,8 @@ def analyse(state, batch):
             r["why"] = "Removals need plan approval."
             if not in_window:
                 r["flagged"] = True
-                r["why"] += f" Back-dated {(today - eff).days} days (window {window})."
+                r["why"] += (f" Back-dated {(today - eff).days} days (window {window})." if eff < today
+                             else f" Dated {(eff - today).days} days ahead (window {window}).")
         elif r["type"] == "Added":
             r.update(route="plan_review", why="New clinicians need plan approval.")
             if not in_window:
@@ -279,9 +299,13 @@ def apply_to_roster(state, change):
     t = change["type"]
     if t == "Added":
         pid = f"P{len(provs) + 1:03d}"
-        specialty = next((n for n, code in DIRECTORY_CODES.items() if code == change.get("directory_code")),
-                         change["new"]["specialty"])
-        provs[pid] = {"id": pid, "npi": change["npi"], "name": change["name"], "specialty": specialty}
+        known = next((p for p in provs.values() if p["npi"] == change["npi"]), None)
+        if known:
+            pid = known["id"]
+        else:
+            specialty = next((n for n, code in DIRECTORY_CODES.items() if code == change.get("directory_code")),
+                             change["new"]["specialty"])
+            provs[pid] = {"id": pid, "npi": change["npi"], "name": change["name"], "specialty": specialty}
         aid = f"A{len(affs) + 1:03d}"
         affs[aid] = {"id": aid, "provider_id": pid, "practice": "lakeview", "site": change["site"],
                      "phone": change["new"]["phone"], "start_date": change["new"]["start_date"],

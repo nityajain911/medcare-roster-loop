@@ -7,6 +7,7 @@ import re
 import secrets
 import threading
 import time
+import urllib.parse
 from collections import OrderedDict
 from functools import wraps
 from pathlib import Path
@@ -85,7 +86,8 @@ def next_step(state):
     batches = list(state["batches"].values())
     changes = list(state["changes"].values())
     seen = state.setdefault("seen", set())
-    open_batch = next((b for b in reversed(batches) if not b["submitted"]), None)
+    # Only the latest batch counts: an abandoned earlier upload shouldn't pin the guide to step 2.
+    open_batch = batches[-1] if batches and not batches[-1]["submitted"] else None
     directory = [d for c in changes for d in c["destinations"] if d["name"] == "Directory"]
     if not batches:
         return 1, "Click Use sample file", "practice", {}, "practice"
@@ -122,6 +124,15 @@ def flash(msg, kind="info"):
     g.state["flash"].append({"msg": msg, "kind": kind})
 
 
+def local_target(url, fallback):
+    """A same-site path to return to, without the ?as= role switch so it can't undo the user's choice."""
+    parts = urllib.parse.urlsplit(url or "")
+    if parts.scheme or parts.netloc or not parts.path.startswith("/") or "\\" in parts.path:
+        return fallback
+    query = urllib.parse.urlencode([(k, v) for k, v in urllib.parse.parse_qsl(parts.query) if k != "as"])
+    return parts.path + (f"?{query}" if query else "")
+
+
 @app.template_global()
 def plural(n, word):
     return f"{n} {word}{'' if n == 1 else 's'}"
@@ -139,7 +150,8 @@ def approver_only(view):
         if g.state["role"] != "plan":
             g.state["blocked_attempts"] = g.state.get("blocked_attempts", 0) + 1
             flash("Only plan approvers can decide changes.", "error")
-            return redirect(request.referrer or url_for("plan_queue"))
+            ref = urllib.parse.urlsplit(request.referrer or "")
+            return redirect(local_target(ref.path + (f"?{ref.query}" if ref.query else ""), url_for("plan_queue")))
         return view(*args, **kwargs)
     return wrapped
 
@@ -173,8 +185,7 @@ def home():
 def switch_role():
     g.state["role"] = "plan" if g.state["role"] == "practice" else "practice"
     flash(f"Now viewing as {ROLES[g.state['role']]['short']}.", "role")
-    target = request.form.get("next", "")
-    return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("home"))
+    return redirect(local_target(request.form.get("next", ""), url_for("home")))
 
 
 @app.route("/practice")
@@ -184,6 +195,7 @@ def practice():
     active = [r for r in roster if r["status"] == "Active"]
     return render_template("practice.html", active="practice", area="practice", roster=roster,
                            n_active=len(active), n_clinicians=len({r["provider_id"] for r in active}),
+                           n_sites=len({r["site"] for r in active}),
                            n_confirmed=sum(r["confirmed"] for r in active), email_sample=logic.EMAIL_SAMPLE)
 
 
@@ -504,10 +516,10 @@ def export_confirmation():
 def date_line(state, c):
     """Requested date, window limit and today, for a back-dated change."""
     requested = logic.parse_date((c.get("row") or {}).get("effective_date", ""))
-    if not (c["flagged"] and requested):
-        return None
     today = dt.date.today()
     limit = today - dt.timedelta(days=state["settings"]["window_days"])
+    if not (c["flagged"] and requested and requested < limit):
+        return None
     return {"requested": requested.isoformat(), "limit": limit.isoformat(), "today": today.isoformat(),
             "gap": (limit - requested).days, "window": state["settings"]["window_days"]}
 

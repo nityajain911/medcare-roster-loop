@@ -211,6 +211,67 @@ def main():
               "Targets are proposed pilot go/no-go bars, set with the pilot plan."]:
         assert t in d, t
     assert "Production: step-up sign-in required" in text(v.get("/plan/settings"))
+
+    # Regressions from the code review
+    import io
+    def upload(cl, text_):
+        r = cl.post("/practice/upload", data={"file": (io.BytesIO(text_.encode()), "f.csv")},
+                    content_type="multipart/form-data")
+        return r.headers["Location"].rsplit("/", 1)[-1]
+    z = client()
+    z.get("/")
+    zs = state_of(z)
+    hdr = "Provider Nm,NPI #,Loc,Spec,Ph,Start Dt,Stat,Eff Dt"
+    fmt = lambda d: d.strftime("%m/%d/%Y")
+    tday = dt.date.today()
+    nh = zs["new_hire"]
+    # A removal for someone not on file is sent back, never added
+    zb = upload(z, hdr + f"\nMei Lin,{nh['npi']},East,Family Medicine,,{fmt(tday)},left,{fmt(tday)}")
+    row = logic.analyse(zs, zs["batches"][zb])["rows"][0]
+    assert (row["type"], row["route"]) == ("Removed", "sent_back"), row
+    # Future dates are not described as "ago"
+    c6 = next(a for a in zs["affiliations"].values() if a["phone"] and zs["providers"][a["provider_id"]]["name"] == "Sofia Nakashima")
+    p6 = zs["providers"][c6["provider_id"]]
+    fut = tday + dt.timedelta(days=100)
+    zb = upload(z, hdr + f"\n{p6['name']},{p6['npi']},East,{p6['specialty']},(312) 555-0100,{fmt(dt.date.fromisoformat(c6['start_date']))},Active,{fmt(fut)}")
+    row = logic.analyse(zs, zs["batches"][zb])["rows"][0]
+    assert "in 100 days" in str(row["checks"]) and "ago" not in str(row["checks"]), row["checks"]
+    # A known clinician joining another site keeps one provider record
+    zara = next(p for p in zs["providers"].values() if p["name"].startswith("Zara"))
+    zb = upload(z, hdr + f"\n{zara['name']},{zara['npi']},East,{zara['specialty']},(312) 555-0111,{fmt(tday)},Active,{fmt(tday)}")
+    z.post(f"/practice/review/{zb}/mapping", data={"field_2": "site"})
+    z.post(f"/practice/review/{zb}/submit")
+    z.get("/plan/queue?as=plan")
+    added = next(x for x in zs["changes"].values() if x["name"] == zara["name"])
+    z.post(f"/plan/change/{added['id']}/approve")
+    z.post("/reconcile/sync")
+    assert added["status"] == "Applied" and sum(p["npi"] == zara["npi"] for p in zs["providers"].values()) == 1
+    # Switching role from a page opened with ?as= sticks
+    z.post("/role", data={"next": "/plan/queue?as=plan"})
+    assert zs["role"] == "practice"
+    assert z.post("/role", data={"next": "//evil.example/x"}).headers["Location"] == "/"
+    # The full sample a second time, after the flow: no false changes, no re-added removals
+    y = client()
+    y.get("/")
+    ys = state_of(y)
+    for _ in range(2):
+        r = y.post("/practice/sample")
+        yb = r.headers["Location"].rsplit("/", 1)[-1]
+        y.post(f"/practice/review/{yb}/mapping", data={"field_2": "site"})
+        if _ == 1:
+            rows = logic.analyse(ys, ys["batches"][yb])["rows"]
+            kinds = {(x["name"], x["type"], x["route"]) for x in rows if x["type"] != "Unchanged"}
+            assert ("Arjun Patel", "Removed", "sent_back") in kinds and not any(k[0] == "Mei Lin" for k in kinds), kinds
+            break
+        y.post(f"/practice/review/{yb}/submit")
+        y.get("/plan/queue?as=plan")
+        for x in list(ys["changes"].values()):
+            if x["status"] == "In plan review":
+                y.post(f"/plan/change/{x['id']}/approve", data={"note": "ok"})
+        y.post("/reconcile/sync")
+        for x in list(ys["changes"].values()):
+            if x["status"] == "Partially applied":
+                y.post(f"/reconcile/{x['id']}/resend", data={"code": "207Q00000X"})
     print("Acceptance checks OK")
 
 

@@ -25,7 +25,7 @@
     </div>
   </div>
   {% if closed %}
-    {% if c.status == 'Sent back' %}
+    {% if c.status == 'Sent back' and c.type == 'Invalid' %}
       <div class="reason">{{ c.why }}</div>
       <form method="post" action="{{ url_for('correct_npi', cid=c.id) }}" class="inline-form" style="margin-top:10px">
         <label for="npi-{{ c.id }}" class="small-text">Corrected NPI</label>
@@ -39,7 +39,7 @@
       </form>
     {% elif c.status == 'Rejected by plan' %}
       <div class="reason">Plan's reason: {{ c.decision.note }}</div>
-    {% elif c.status == 'Held' %}
+    {% elif c.status in ['Held', 'Sent back'] %}
       <div class="reason">{{ c.why }}</div>
     {% else %}
       <p class="small-text muted" style="margin:0">{{ c.why if c.status == 'Confirmed' else 'Duplicate row removed.' }}</p>
