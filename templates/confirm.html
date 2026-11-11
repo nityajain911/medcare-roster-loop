@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1>Confirm no changes</h1>
+  <p>Review the affiliations {{ plan_name }} has on file. Your confirmation covers only the rows shown here.</p></div>
+  <div class="stats">
+    <div class="stat"><b>{{ n_sites }}</b><span>Sites</span></div>
+    <div class="stat"><b>{{ n_clinicians }}</b><span>Clinicians</span></div>
+    <div class="stat"><b>{{ roster | length }}</b><span>Affiliations</span></div>
+    <div class="stat"><b>{{ open_changes | length }}</b><span>Pending changes</span></div>
+  </div>
+</div>
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Clinician</th><th>Specialty</th><th>Site</th><th>Phone</th></tr></thead>
+    <tbody>{% for r in roster %}<tr><td><strong>{{ r.name }}</strong></td><td>{{ r.specialty }}</td><td>{{ r.site_name }}</td><td>{{ r.phone }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <form method="post">
+    <label class="attest"><input type="checkbox" name="agree" value="yes" id="agree"
+      onchange="document.getElementById('record').disabled = !this.checked">
+      <span>I confirm the {{ roster | length }} affiliations shown are accurate as of today.</span></label>
+    <div class="btn-row">
+      <button class="btn" type="submit" id="record" disabled>Record confirmation</button>
+      <a class="btn ghost" href="{{ url_for('practice') }}">Back</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

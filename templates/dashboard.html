@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% macro val(v, suffix='%') %}{% if v is none %}<span class="muted">None yet</span>{% else %}{{ v }}{{ suffix }}{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Dashboard</h1><p>Every number below is computed from this demo's state. Confirm or apply changes and they move.</p></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="tile star">
+    <h3>North star: Northwind records confirmed and current</h3>
+    <div class="big">{{ m.north_star.value }}%</div>
+    <div class="bar"><i style="width: {{ m.north_star.value }}%"></i></div>
+    <div class="formula">affiliations confirmed this cycle or changed and applied / all active affiliations = {{ m.north_star.n }} / {{ m.north_star.d }}</div>
+  </div>
+  <div class="tile">
+    <h3>By practice</h3>
+    <div class="bars">
+      {% for key, p in m.by_practice.items() %}
+      <div class="row"><span>{{ practices[key].name }}</span>
+        <span class="track2"><i style="width: {{ (100 * p.n / p.d) | round | int if p.d else 0 }}%"></i></span>
+        <span class="mono">{{ p.n }} / {{ p.d }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="formula">confirmed and current / active affiliations, per practice</div>
+  </div>
+</div>
+
+<div class="grid grid-3" style="margin-top:16px">
+  <div class="tile"><h3>Changes confirmed by every destination</h3><div class="big">{{ val(m.applied.value) }}</div>
+    <div class="formula">applied / (approved + automatic) = {{ m.applied.n }} / {{ m.applied.d }}</div></div>
+  <div class="tile"><h3>Accepted first time</h3><div class="big">{{ val(m.first_time.value) }}</div>
+    <div class="formula">not sent back / submitted = {{ m.first_time.n }} / {{ m.first_time.d }}<br>failed MedCare checks: {{ m.first_time.checks }}, rejected by plan: {{ m.first_time.plan }}</div></div>
+  <div class="tile"><h3>Automatic share</h3><div class="big">{{ val(m.automatic.value) }}</div>
+    <div class="formula">automatic / all changes = {{ m.automatic.n }} / {{ m.automatic.d }}</div></div>
+  <div class="tile"><h3>Hours released (illustrative)</h3><div class="big">{{ m.hours.value }} h</div>
+    <div class="formula">({{ m.hours.changes }} changes × 15 min + {{ m.hours.confirmations }} confirmations × 3 min) / 60</div>
+    <p class="muted small-text" style="margin-top:8px">Assumption from the deck's base case; replace with the pilot plan's time study.</p></div>
+</div>
+
+<p class="muted small-text" style="margin-top:20px">Synthetic data shows the checks work. It is not evidence of real error rates.</p>
+{% endblock %}

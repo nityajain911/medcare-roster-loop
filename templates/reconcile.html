@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_ui.html" import chip, sim, type_chip %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reconciliation</h1>
+    <p>A change is Applied only when every destination system has acknowledged it. Destination systems are simulated. {{ sim() }}</p>
+  </div>
+  <form method="post" action="{{ url_for('sync') }}">
+    <button class="btn big" type="submit" {{ 'disabled' if not pending }}>Run directory sync</button>
+    <div class="muted small-text" style="margin-top:4px">{{ pending }} waiting for the directory</div>
+  </form>
+</div>
+
+{% for c in changes %}
+<div class="card" id="{{ c.id }}">
+  <div class="card-head">
+    <div>
+      <span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }}
+      <h2 style="margin-top:4px">{{ c.name }}</h2>
+      <span class="muted small-text">{{ c.site_name }}. {{ c.why }}</span>
+    </div>
+    <div style="text-align:right">{{ chip(c.status) }}
+      <div class="muted small-text">{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ c.destinations | length }} systems updated</div></div>
+  </div>
+
+  <div class="dests">
+    {% for d in c.destinations %}
+    <div class="dest {{ 'ok' if d.status == 'Acknowledged' else ('failed' if d.status == 'Failed' else '') }}">
+      <div class="dest-head"><span>{{ d.name }} {{ sim() }}</span>{{ chip(d.status) }}</div>
+      <p>{{ d.note }}</p>
+      <p>{% if d.time %}{{ d.time }}. {% endif %}Attempts: {{ d.attempts }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
+  {% if dirdest and dirdest.status == 'Failed' %}
+  <div class="failbox">
+    <h3>Directory rejected the update. Provider database acknowledged it.</h3>
+    <p><b>Reason:</b> Specialty "{{ c.specialty }}" has no directory specialty code. The file passed MedCare's checks; the directory has its own rule.</p>
+    <p><b>Fix:</b> Pick the matching code and resend. Only the directory is sent it again.</p>
+    <form method="post" action="{{ url_for('resend', cid=c.id) }}" class="inline-form">
+      <select name="code" aria-label="Directory specialty code">
+        <option value="">Pick a directory specialty code</option>
+        {% for name, code in codes.items() %}<option value="{{ code }}">{{ name }} ({{ code }})</option>{% endfor %}
+      </select>
+      <button class="btn" type="submit">Fix and resend</button>
+    </form>
+    <p class="muted small-text" style="margin-top:8px">Directory specialty codes: illustrative subset of NUCC taxonomy codes.</p>
+  </div>
+  {% endif %}
+  {% if c.directory_code and c.specialty in saved_map %}
+    <p class="muted small-text">Saved mapping: {{ c.specialty }} → {{ saved_map[c.specialty] }}. Future files use it automatically.</p>
+  {% endif %}
+
+  <details>
+    <summary>Reconciliation record</summary>
+    <div class="table-wrap"><table class="record">
+      <tr><th>Change id</th><td class="mono">{{ c.id }}</td></tr>
+      <tr><th>Source</th><td>{{ c.source }}{% if c.row_no %}, row {{ c.row_no }}{% endif %}</td></tr>
+      <tr><th>Old → new</th><td class="diff">{% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}</td></tr>
+      <tr><th>Checks</th><td>{% for k in c.checks %}{{ k.label }}: {{ 'pass' if k.ok == true else ('fail' if k.ok == false else 'n/a') }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
+      <tr><th>Route</th><td>{{ c.route | replace('_', ' ') }}. {{ c.why }}</td></tr>
+      <tr><th>Decision</th><td>{% if c.decision %}{{ c.decision.action }} by {{ c.decision.by }}, {{ c.decision.time }}{% if c.decision.note %}. Note: {{ c.decision.note }}{% endif %}{% endif %}</td></tr>
+      <tr><th>Final status</th><td>{{ c.status }}</td></tr>
+    </table></div>
+    <ul class="events">{% for e in c.events %}<li>{{ e.time }}: <b>{{ e.label }}</b></li>{% endfor %}</ul>
+  </details>
+</div>
+{% else %}
+<div class="card empty">No changes have been sent to destination systems yet.<br>
+  <a href="{{ url_for('plan_queue') }}">Approve changes in the plan queue</a> first.</div>
+{% endfor %}
+
+{% if changes and not pending and changes | selectattr('status', 'equalto', 'Applied') | list | length == changes | length %}
+<div class="card tight btn-row"><span class="chip chip-green">All changes applied</span>
+  <a class="btn" href="{{ url_for('practice_status') }}">See what Lakeview sees</a></div>
+{% endif %}
+{% endblock %}

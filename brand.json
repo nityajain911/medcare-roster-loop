@@ -1,0 +1,21 @@
+{
+  "app_name": "MedCare Roster Loop",
+  "tagline": "Every roster change, checked and confirmed live",
+  "font": "Satoshi",
+  "colors": {
+    "primary": "#2A6AF1",
+    "primary_dark": "#0A399E",
+    "navy": "#072669",
+    "ink": "#29303D",
+    "muted": "#5A6884",
+    "line": "#E3E7EF",
+    "surface": "#FFFFFF",
+    "background": "#F3F4F7",
+    "tint": "#ECF2FE",
+    "green": "#5E9A1C",
+    "coral": "#D9534F",
+    "purple": "#6B4FD8",
+    "amber": "#B7791F",
+    "grey": "#8C98B0"
+  }
+}

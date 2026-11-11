@@ -1,0 +1,31 @@
+{% macro chip(status) -%}
+  {%- set cls = {
+    'Applied': 'green', 'Automatic': 'blue', 'automatic': 'blue',
+    'In plan review': 'purple', 'Plan review': 'purple', 'plan_review': 'purple', 'Approved': 'purple',
+    'Partially applied': 'amber',
+    'Sent back': 'coral', 'sent_back': 'coral', 'Rejected by plan': 'coral', 'Failed': 'coral', 'Rejected': 'coral',
+    'Acknowledged': 'green', 'Pending': 'grey', 'Waiting for systems': 'grey', 'Held': 'grey', 'held': 'grey',
+    'Unchanged': 'muted', 'none': 'muted', 'Correction': 'blue'
+  }.get(status, 'grey') -%}
+  {%- set text = {
+    'automatic': 'Automatic', 'plan_review': 'Plan review', 'sent_back': 'Sent back to practice',
+    'held': 'Held', 'none': 'No action'
+  }.get(status, status) -%}
+  <span class="chip chip-{{ cls }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro sim() -%}<span class="sim">Simulated</span>{%- endmacro %}
+
+{% macro checks(items) -%}
+  <ul class="checks">
+  {% for c in items %}
+    <li class="check {{ 'pass' if c.ok == true else ('fail' if c.ok == false else 'na') }}" title="{{ c.detail or '' }}">
+      <span class="dot" aria-hidden="true">{{ '✓' if c.ok == true else ('✕' if c.ok == false else '·') }}</span>{{ c.label }}{% if c.detail %}<em>{{ c.detail }}</em>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+{%- endmacro %}
+
+{% macro type_chip(t) -%}
+  <span class="type type-{{ t | lower }}">{{ {'Invalid': 'Bad NPI', 'Duplicate': 'Duplicate'}.get(t, t) }}</span>
+{%- endmacro %}

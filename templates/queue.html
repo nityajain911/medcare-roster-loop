@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_ui.html" import chip, checks, type_chip %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Plan queue</h1>
+    <p>Changes that the plan's policy says a person must review. Each one shows the evidence and why it is here.</p>
+  </div>
+  <div class="stats"><div class="stat"><b>{{ waiting | length }}</b><span>Waiting for you</span></div></div>
+</div>
+
+{% for c in waiting %}
+<div class="card" id="{{ c.id }}">
+  <div class="card-head">
+    <div>
+      <span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }} {% if c.flagged %}<span class="flag">Back-dated</span>{% endif %}
+      <h2 style="margin-top:4px">{{ c.name }}</h2>
+      <span class="muted small-text">{{ c.site_name }}, Lakeview Family Practice. Source: {{ c.source }}, row {{ c.row_no }}. Submitted {{ c.submitted_at }}.</span>
+    </div>
+    {{ chip(c.status) }}
+  </div>
+  <div class="grid grid-2">
+    <div>
+      <h3>What the practice sent</h3>
+      <div class="diff">
+        {% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}
+      </div>
+      {% if c.type == 'Removed' %}<p class="muted small-text" style="margin-top:6px">Affected systems: provider database, directory</p>{% endif %}
+      {% if c.type == 'Added' %}<p class="muted small-text" style="margin-top:6px">Specialty: {{ c.new.specialty }}. Phone: {{ c.new.phone }}. Start date: {{ c.new.start_date }}.</p>{% endif %}
+      <div class="why"><b>Why it is here:</b> {{ c.why }}</div>
+    </div>
+    <div>
+      <h3>MedCare checks</h3>
+      {{ checks(c.checks) }}
+    </div>
+  </div>
+  <div class="grid grid-2" style="margin-top:16px">
+    <form method="post" action="{{ url_for('approve', cid=c.id) }}" class="inline-form">
+      <input type="text" name="note" placeholder="{{ 'Override note (required for a flagged change)' if c.flagged else 'Note (optional)' }}"
+             {% if c.flagged %}value="Practice confirmed last day of work."{% endif %} aria-label="Approval note">
+      <button class="btn" type="submit">Approve change</button>
+    </form>
+    <form method="post" action="{{ url_for('reject', cid=c.id) }}" class="inline-form">
+      <input type="text" name="reason" placeholder="Reason the practice will see (required)" aria-label="Rejection reason">
+      <button class="btn danger" type="submit">Reject change</button>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="card empty">
+  Nothing waiting for review.
+  {% if not decided %}<br><a href="{{ url_for('practice') }}">Start from the practice view</a> and submit the sample file.{% else %}<br><a href="{{ url_for('reconcile') }}">Go to reconciliation</a> to see where approved changes have reached.{% endif %}
+</div>
+{% endfor %}
+
+{% if decided %}
+<div class="card">
+  <h2>Decided</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Change</th><th>Clinician</th><th>Decision</th><th>Note</th><th>Now</th></tr></thead>
+    <tbody>{% for c in decided %}
+      <tr><td class="mono">{{ c.id }}</td><td>{{ c.name }} <span class="muted small-text">{{ c.type }}</span></td>
+        <td>{{ c.decision.action }} <span class="muted small-text">{{ c.decision.time }}</span></td>
+        <td>{{ c.decision.note or '' }}</td><td>{{ chip(c.status) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

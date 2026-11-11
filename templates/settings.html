@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1>Plan settings</h1><p>Northwind's control policy. Changes apply to the next file a practice sends.</p></div></div>
+<form method="post" class="card">
+  <label class="toggle"><input type="checkbox" name="phone_auto" {{ 'checked' if settings.phone_auto }}>
+    <span><b>Phone changes apply automatically</b><br><span class="muted small-text">When off, phone changes go to plan review.</span></span></label>
+  <div class="field" style="margin-top:14px">
+    <label for="window_days">Back-date window (days)</label>
+    <input type="number" id="window_days" name="window_days" min="1" max="365" value="{{ settings.window_days }}" style="width:120px">
+    <span class="muted small-text">Changes effective further back than this are flagged for review.</span>
+  </div>
+  <p class="muted small-text">Always reviewed: new clinicians and removals. Always sent back: failed NPI checks. Always held: duplicates.</p>
+  <button class="btn" type="submit">Save settings</button>
+</form>
+{% endblock %}

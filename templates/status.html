@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_ui.html" import chip, type_chip %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Your changes</h1>
+    <p>Every change you sent to {{ plan_name }}, and how far it has got. "Live in directory" appears only after the directory confirms it.</p>
+  </div>
+</div>
+
+{% for c in changes if c.source != 'Correction' %}
+{% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
+{% set closed = c.status in ['Sent back', 'Rejected by plan', 'Held'] %}
+<div class="card">
+  <div class="card-head">
+    <div><span class="mono muted">{{ c.id }}</span> {{ type_chip(c.type) }}
+      <h2 style="margin-top:4px">{{ c.name }}</h2>
+      <span class="muted small-text">{{ c.site_name }}</span></div>
+    <div style="text-align:right">{{ chip(c.status) }}<br>
+      {% if dirdest and dirdest.status == 'Acknowledged' %}<span class="live">Live in directory</span>
+      {% elif c.destinations %}<span class="notlive">{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of 2 systems updated</span>{% endif %}
+    </div>
+  </div>
+  {% if closed %}
+    <div class="reason">
+      {% if c.status == 'Rejected by plan' %}Sent back by plan: {{ c.decision.note }}
+      {% elif c.status == 'Sent back' %}Sent back by MedCare checks: {{ c.why }}
+      {% else %}Held: {{ c.why }}{% endif %}
+    </div>
+  {% else %}
+  <div class="track">
+    <div class="stage done"><b>Submitted</b><span>{{ c.submitted_at }}</span></div>
+    <div class="stage done"><b>Checked</b><span>{{ c.checked_at }}</span></div>
+    {% if c.route == 'automatic' %}
+      <div class="stage done"><b>Automatic</b><span>Plan policy</span></div>
+    {% elif c.decision %}
+      <div class="stage done"><b>Approved</b><span>{{ c.decision.time }}</span></div>
+    {% else %}
+      <div class="stage"><b>Approved</b><span>Waiting for plan review</span></div>
+    {% endif %}
+    <div class="stage {{ 'done' if c.status == 'Applied' else ('warn' if c.status == 'Partially applied' else '') }}">
+      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif c.status == 'Partially applied' %}1 of 2 systems updated{% else %}Not yet{% endif %}</span></div>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card empty">You have not sent any changes yet. <a href="{{ url_for('practice') }}">Go to the practice view</a>.</div>
+{% endfor %}
+
+{% if attestations %}
+<div class="card">
+  <h2>Confirmations</h2>
+  <ul class="events">{% for a in attestations %}<li>{{ a.time }}: <b>{{ a.scope | length }} affiliations confirmed</b> by {{ a.by }} ({{ a.source }})</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endblock %}

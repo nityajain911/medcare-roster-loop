@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "_ui.html" import chip, sim, checks, type_chip %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>What changed</h1>
+    <p>{{ batch.source }}, {{ batch.rows | length }} rows, received {{ batch.created }}. Compared with the roster on file by clinician and site.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>{{ result.counts.Unchanged }}</b><span>Unchanged</span></div>
+    <div class="stat"><b>{{ result.counts.Added }}</b><span>Added</span></div>
+    <div class="stat"><b>{{ result.counts.Removed }}</b><span>Removed</span></div>
+    <div class="stat"><b>{{ result.counts.Changed }}</b><span>Changed</span></div>
+    <div class="stat"><b>{{ result.counts.Invalid }}</b><span>Bad NPI</span></div>
+    <div class="stat"><b>{{ result.counts.Duplicate }}</b><span>Duplicate</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div>
+      <h2>Column mapping {{ sim() }}</h2>
+      <p class="muted small-text" style="margin:4px 0 0">Simulated AI mapping (fuzzy matching stand-in). In production, a model trained on past mappings; low-confidence fields always go to a person.</p>
+    </div>
+    {% if batch.mapping_confirmed %}<span class="chip chip-green">Mapping confirmed</span>{% else %}<span class="chip chip-amber">Needs your confirmation</span>{% endif %}
+  </div>
+  <form method="post" action="{{ url_for('confirm_mapping', bid=batch.id) }}">
+    <div class="mapping">
+      {% for m in batch.mapping %}
+      <div class="map-item {{ 'low' if m.needs_confirm }}">
+        <div class="from">"{{ m.header }}"</div>
+        {% if m.needs_confirm and not batch.submitted %}
+          <label class="small-text" for="field_{{ loop.index0 }}">Is this the right field?</label>
+          <select name="field_{{ loop.index0 }}" id="field_{{ loop.index0 }}">
+            {% for f in fields %}<option value="{{ f }}" {{ 'selected' if f == m.field }}>{{ labels[f] }}</option>{% endfor %}
+          </select>
+        {% else %}
+          <div class="to">→ {{ labels[m.field] }}{% if m.confirmed_by_person %} <span class="muted small-text">confirmed by you</span>{% endif %}</div>
+        {% endif %}
+        <div class="conf" title="{{ m.confidence }}% confidence"><i style="width: {{ m.confidence }}%"></i></div>
+        <div class="small-text muted">{{ m.confidence }}% confidence{% if m.needs_confirm %}, under {{ floor }}%{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not batch.mapping_confirmed and not batch.submitted %}
+      <div class="btn-row" style="margin-top:14px"><button class="btn" type="submit">Confirm mapping</button></div>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card" id="changes">
+  <div class="card-head">
+    <h2>Every row, checked and routed</h2>
+    <span class="muted small-text">Effective-date window: {{ settings.window_days }} days. Phone changes automatic: {{ 'on' if settings.phone_auto else 'off' }}.</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Row</th><th>Clinician and site</th><th>What changed</th><th>Checks</th><th>Route</th></tr></thead>
+      <tbody>
+      {% for r in result.rows if r.type != 'Unchanged' %}
+        <tr>
+          <td class="muted">{{ r.row_no }}</td>
+          <td><strong>{{ r.name }}</strong><br><span class="muted small-text">{{ r.site_name }}</span><br><span class="mono muted">{{ r.npi }}</span></td>
+          <td class="diff">
+            {{ type_chip(r.type) }} {% if r.flagged %}<span class="flag">Back-dated</span>{% endif %}<br>
+            {% if r.type == 'Added' %}<span class="old">Not listed</span><span class="arrow">→</span><span class="new">Joins {{ r.site_name }} as {{ r.specialty }}</span>
+            {% elif r.type == 'Removed' %}<span class="old">Active</span><span class="arrow">→</span><span class="new">Left, effective {{ r.effective_date }}</span>
+            <div class="muted small-text">Affected systems: provider database, directory</div>
+            {% elif r.type == 'Changed' %}{% for c in r.changes %}{{ c.label }}: <span class="old">{{ c.old }}</span><span class="arrow">→</span><span class="new">{{ c.new }}</span><br>{% endfor %}
+            {% elif r.type == 'Unchanged' %}<span class="muted">Same as on file</span>
+            {% elif r.type == 'Invalid' %}<span class="muted">NPI in file: </span><span class="mono">{{ r.npi }}</span>
+            {% else %}<span class="muted">Repeat row</span>{% endif %}
+          </td>
+          <td>{{ checks(r.checks) }}</td>
+          <td style="min-width:200px">{{ chip(r.route) }}{% if r.change_id %} <span class="mono muted">{{ r.change_id }}</span>{% endif %}
+            {% if r.route != 'none' %}<div class="why"><b>Why:</b> {{ r.why }}</div>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      {% for r in result.rows if r.type == 'Unchanged' %}
+        <tr class="row-quiet">
+          <td class="muted">{{ r.row_no }}</td>
+          <td><strong>{{ r.name }}</strong> <span class="muted small-text">{{ r.site_name }}</span></td>
+          <td class="diff">{{ type_chip(r.type) }}</td>
+          <td><span class="check pass"><span class="dot" aria-hidden="true">✓</span>All checks passed</span></td>
+          <td><span class="muted small-text">Counts as confirmed</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if result.missing %}
+    <p class="muted small-text" style="margin-top:12px">{{ result.missing | length }} affiliations on file are not in this file. They are kept as is: a missing row is never treated as a removal.</p>
+  {% endif %}
+</div>
+
+{% if batch.submitted %}
+  <div class="card tight btn-row"><span class="chip chip-green">Submitted {{ batch.submitted_at }}</span>
+    <a class="btn secondary" href="{{ url_for('practice_status') }}">See status</a>
+    <a class="btn" href="{{ url_for('plan_queue') }}">Go to plan queue</a></div>
+{% else %}
+  <form method="post" action="{{ url_for('submit', bid=batch.id) }}" class="card tight btn-row">
+    <button class="btn big" type="submit" {{ 'disabled' if not batch.mapping_confirmed }}>Submit changes</button>
+    <span class="muted small-text">{% if not batch.mapping_confirmed %}Confirm the column mapping first.{% else %}Unchanged rows count as confirmed. Changes go to automatic, plan review or back to you, as shown.{% endif %}</span>
+  </form>
+{% endif %}
+{% endblock %}
