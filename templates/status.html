@@ -18,7 +18,7 @@
       <span class="muted small-text">{{ c.site_name }}</span></div>
     <div style="text-align:right">{{ chip(c.status) }}<br>
       {% if dirdest and dirdest.status == 'Acknowledged' %}<span class="live">Live in directory</span>
-      {% elif c.destinations %}<span class="notlive">{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of 2 systems updated</span>{% endif %}
+      {% elif c.destinations %}<span class="notlive">{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ c.destinations | length }} systems updated</span>{% endif %}
     </div>
   </div>
   {% if closed %}
@@ -39,7 +39,7 @@
       <div class="stage"><b>Approved</b><span>Waiting for plan review</span></div>
     {% endif %}
     <div class="stage {{ 'done' if c.status == 'Applied' else ('warn' if c.status == 'Partially applied' else '') }}">
-      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif c.status == 'Partially applied' %}1 of 2 systems updated{% else %}Not yet{% endif %}</span></div>
+      <b>Applied</b><span>{% if c.status == 'Applied' %}{{ c.applied_at }}{% elif c.status == 'Partially applied' %}{{ c.destinations | selectattr('status', 'equalto', 'Acknowledged') | list | length }} of {{ c.destinations | length }} systems updated{% else %}Not yet{% endif %}</span></div>
   </div>
   {% endif %}
 </div>

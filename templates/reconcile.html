@@ -37,13 +37,14 @@
   {% set dirdest = c.destinations | selectattr('name', 'equalto', 'Directory') | first %}
   {% if dirdest and dirdest.status == 'Failed' %}
   <div class="failbox">
-    <h3>Directory rejected the update. Provider database acknowledged it.</h3>
+    <h3>Directory rejected the update. Provider database and claims and prior auth acknowledged it.</h3>
     <p><b>Reason:</b> Specialty "{{ c.specialty }}" has no directory specialty code. The file passed MedCare's checks; the directory has its own rule.</p>
-    <p><b>Fix:</b> Pick the matching code and resend. Only the directory is sent it again.</p>
+    {% set suggested = registry_codes.get(c.npi) %}
+    <p><b>Fix:</b> {% if suggested %}The synthetic registry lists this clinician as <b>{{ suggested }}</b>. Check it and resend.{% else %}Pick the matching code and resend.{% endif %} Only the directory is sent it again.</p>
     <form method="post" action="{{ url_for('resend', cid=c.id) }}" class="inline-form">
       <select name="code" aria-label="Directory specialty code">
         <option value="">Pick a directory specialty code</option>
-        {% for name, code in codes.items() %}<option value="{{ code }}">{{ name }} ({{ code }})</option>{% endfor %}
+        {% for name, code in codes.items() %}<option value="{{ code }}" {{ 'selected' if code == suggested }}>{{ name }} ({{ code }}){{ ', suggested from synthetic registry' if code == suggested }}</option>{% endfor %}
       </select>
       <button class="btn" type="submit">Fix and resend</button>
     </form>
@@ -54,18 +55,29 @@
     <p class="muted small-text">Saved mapping: {{ c.specialty }} → {{ saved_map[c.specialty] }}. Future files use it automatically.</p>
   {% endif %}
 
+  {% if c.reverses %}<p class="small-text"><span class="chip chip-blue">Correction</span> Reverses <a href="#{{ c.reverses }}">{{ c.reverses }}</a>. The original stays in the audit trail.</p>{% endif %}
+  {% if c.reversed_by %}<p class="small-text"><span class="chip chip-grey">Reversed</span> by <a href="#{{ c.reversed_by }}">{{ c.reversed_by }}</a>. Nothing was deleted.</p>{% endif %}
+
   <details>
-    <summary>Reconciliation record</summary>
+    <summary>Audit trail{% if c.version %} ({{ c.version }}){% endif %}</summary>
     <div class="table-wrap"><table class="record">
       <tr><th>Change id</th><td class="mono">{{ c.id }}</td></tr>
-      <tr><th>Source</th><td>{{ c.source }}{% if c.row_no %}, row {{ c.row_no }}{% endif %}</td></tr>
+      <tr><th>Record version</th><td>{{ c.version or 'Not applied yet' }}</td></tr>
+      <tr><th>Source</th><td>{{ c.source }}{% if c.row_no %}, row {{ c.row_no }} of {{ c.batch_id }}{% endif %}</td></tr>
       <tr><th>Old → new</th><td class="diff">{% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}</td></tr>
       <tr><th>Checks</th><td>{% for k in c.checks %}{{ k.label }}: {{ 'pass' if k.ok == true else ('fail' if k.ok == false else 'n/a') }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
       <tr><th>Route</th><td>{{ c.route | replace('_', ' ') }}. {{ c.why }}</td></tr>
       <tr><th>Decision</th><td>{% if c.decision %}{{ c.decision.action }} by {{ c.decision.by }}, {{ c.decision.time }}{% if c.decision.note %}. Note: {{ c.decision.note }}{% endif %}{% endif %}</td></tr>
+      <tr><th>Destinations</th><td>{% for d in c.destinations %}{{ d.name }}: {{ d.status }}{% if d.time %} at {{ d.time }}{% endif %}, attempts {{ d.attempts }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
       <tr><th>Final status</th><td>{{ c.status }}</td></tr>
     </table></div>
     <ul class="events">{% for e in c.events %}<li>{{ e.time }}: <b>{{ e.label }}</b></li>{% endfor %}</ul>
+    {% if c.status == 'Applied' and not c.reversed_by and c.source != 'Correction' %}
+    <form method="post" action="{{ url_for('reverse', cid=c.id) }}" style="margin-top:10px">
+      <button class="btn ghost small" type="submit">Reverse change</button>
+      <span class="muted small-text">Creates a correcting change that every destination must acknowledge again.</span>
+    </form>
+    {% endif %}
   </details>
 </div>
 {% else %}

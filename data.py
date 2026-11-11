@@ -118,7 +118,7 @@ def generate():
             aid = f"A{aff_n:03d}"
             affiliations[aid] = {"id": aid, "provider_id": pid, "practice": practice, "site": site,
                                  "phone": new_phone(area), "start_date": past(400, 3000),
-                                 "end_date": None, "status": "Active"}
+                                 "end_date": None, "status": "Active", "version": 1}
         return pid
 
     for i, (specialty, sites) in enumerate(LAKEVIEW_PLAN):
@@ -145,6 +145,9 @@ def generate():
         "affiliations": affiliations,
         "lakeview_providers": lakeview_ids,
         "registry": set(used_npis),
+        # The synthetic registry also knows each clinician's directory specialty code.
+        "registry_taxonomy": {**{p["npi"]: DIRECTORY_CODES[p["specialty"]] for p in providers.values()},
+                              new_hire["npi"]: DIRECTORY_CODES["Family Medicine"]},
         "new_hire": new_hire,
         "phone_change": phone_change,
         "confirmed": confirmed,

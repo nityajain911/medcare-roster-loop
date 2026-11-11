@@ -50,6 +50,8 @@ def load_state():
             while len(STATES) > MAX_VISITORS:
                 STATES.popitem(last=False)
         g.vid, g.state = vid, STATES[vid]
+    if request.method == "GET" and request.endpoint in ("practice_status", "dashboard"):
+        g.state.setdefault("seen", set()).add(request.endpoint)
 
 
 @app.after_request
@@ -60,12 +62,44 @@ def save_cookie(resp):
     return resp
 
 
+DEMO_STEPS = ["Practice", "What changed", "Plan queue", "Reconciliation", "Practice status", "Dashboard"]
+
+
+def next_step(state):
+    """Where a judge should go next, worked out from this visitor's state."""
+    batches = list(state["batches"].values())
+    changes = list(state["changes"].values())
+    seen = state.setdefault("seen", set())
+    open_batch = next((b for b in reversed(batches) if not b["submitted"]), None)
+    directory = [d for c in changes for d in c["destinations"] if d["name"] == "Directory"]
+    if not batches:
+        return 1, "Click Use sample file", "practice", {}
+    if open_batch:
+        return 2, "Confirm the mapping, then Submit changes", "review", {"bid": open_batch["id"]}
+    if any(c["status"] == "In plan review" for c in changes):
+        return 3, "Approve the changes in the plan queue", "plan_queue", {}
+    if any(d["status"] == "Pending" for d in directory):
+        return 4, "Click Run directory sync", "reconcile", {}
+    if any(d["status"] == "Failed" for d in directory):
+        return 4, "Fix and resend the rejected change", "reconcile", {}
+    if "practice_status" not in seen:
+        return 5, "See what Lakeview sees", "practice_status", {}
+    if "dashboard" not in seen:
+        return 6, "See the dashboard", "dashboard", {}
+    return 7, "Demo complete. Reset demo to run it again.", None, {}
+
+
 @app.context_processor
 def inject():
     flashes, g.state["flash"] = g.state["flash"], []
+    step, text, endpoint, args = next_step(g.state)
+    guide = {"step": step, "text": text, "here": endpoint == request.endpoint and
+             (not args or request.view_args == args),
+             "url": url_for(endpoint, **args) if endpoint else None}
     return {"brand": BRAND, "nav": NAV, "flashes": flashes, "plan_name": data.PLAN,
             "sites": data.SITES, "practices": data.PRACTICES, "personas": PERSONAS,
-            "codes": data.DIRECTORY_CODES, "settings": g.state["settings"]}
+            "codes": data.DIRECTORY_CODES, "settings": g.state["settings"],
+            "guide": guide, "demo_steps": DEMO_STEPS}
 
 
 def flash(msg, kind="info"):
@@ -301,7 +335,7 @@ def approve(cid):
     c["decision"] = {"action": "Approved", "by": PERSONAS["plan"], "time": logic.now(), "note": note}
     logic.event(c, "Approved by Northwind" + (f": {note}" if note else ""))
     logic.dispatch(g.state, c)
-    flash(f"{cid} approved and sent to the provider database and directory.", "success")
+    flash(f"{cid} approved and sent to the provider database, claims and prior auth, and directory.", "success")
     return redirect(url_for("plan_queue"))
 
 
@@ -327,7 +361,8 @@ def reconcile():
     changes.sort(key=lambda c: ({"Partially applied": 0, "Waiting for systems": 1}.get(c["status"], 2), c["id"]))
     pending = sum(1 for c in changes for d in c["destinations"] if d["name"] == "Directory" and d["status"] == "Pending")
     return render_template("reconcile.html", active="reconcile", persona="plan", changes=changes,
-                           pending=pending, saved_map=g.state["saved_specialty_map"])
+                           pending=pending, saved_map=g.state["saved_specialty_map"],
+                           registry_codes=g.state["registry_taxonomy"])
 
 
 @app.post("/reconcile/sync")

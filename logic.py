@@ -185,7 +185,8 @@ def analyse(state, batch):
             r["why"] = "Removals need plan approval."
             if not in_window:
                 r["flagged"] = True
-                r["why"] += f" Back-dated {(today - eff).days} days, beyond the {window}-day window."
+                r["why"] += (f" Back-dated {(today - eff).days} days, beyond the {window}-day window."
+                             " Review before claims and prior auth end dates move back.")
         elif r["type"] == "Added":
             r.update(route="plan_review", why="New clinicians always need plan approval.")
             if not in_window:
@@ -226,15 +227,29 @@ def event(change, label):
     change["events"].append({"time": now(), "label": label})
 
 
+DESTINATIONS = ["Provider database", "Claims and prior auth", "Directory"]
+
+
+def _claims_note(change):
+    if change["type"] in ("Removed",) and change["new"].get("end_date"):
+        return f"End date {change['new']['end_date']} recorded for claims and prior auth checks."
+    if change["type"] == "Added":
+        return f"Clinician active for claims and prior auth from {change['new'].get('start_date', 'today')}."
+    return "Provider record updated for claims and prior auth."
+
+
 def dispatch(state, change):
-    """Send to both destinations. The provider database acknowledges at once; the directory waits for sync."""
+    """Send to every destination. Provider database and claims acknowledge at once; the directory waits for sync."""
     change["destinations"] = [
         {"name": "Provider database", "status": "Acknowledged", "time": now(), "attempts": 1,
          "note": "Stored (specialty kept as free text)."},
+        {"name": "Claims and prior auth", "status": "Acknowledged", "time": now(), "attempts": 1,
+         "note": _claims_note(change)},
         {"name": "Directory", "status": "Pending", "time": None, "attempts": 0, "note": "Waiting for directory sync."},
     ]
-    event(change, "Sent to provider database and directory")
+    event(change, "Sent to " + ", ".join(DESTINATIONS).lower())
     event(change, "Provider database acknowledged")
+    event(change, "Claims and prior auth acknowledged")
     refresh_status(state, change)
 
 
@@ -266,14 +281,18 @@ def apply_to_roster(state, change):
         aid = f"A{len(affs) + 1:03d}"
         affs[aid] = {"id": aid, "provider_id": pid, "practice": "lakeview", "site": change["site"],
                      "phone": change["new"]["phone"], "start_date": change["new"]["start_date"],
-                     "end_date": None, "status": "Active"}
+                     "end_date": None, "status": "Active", "version": 1}
         change["aff_id"] = aid
+        change["version"] = "v1 (new record)"
         state["applied_affs"].add(aid)
-    elif t == "Removed":
-        a = affs[change["aff_id"]]
+        return
+    a = affs[change["aff_id"]]
+    # Every applied change adds a version; nothing is overwritten without one.
+    change["version"] = f"v{a['version']} → v{a['version'] + 1}"
+    a["version"] += 1
+    if t == "Removed":
         a["status"], a["end_date"] = "Terminated", change["new"]["end_date"]
     elif t == "Changed":
-        a = affs[change["aff_id"]]
         for f, val in change["new"].items():
             if f in ("phone", "start_date"):
                 a[f] = val
@@ -281,7 +300,6 @@ def apply_to_roster(state, change):
                 provs[a["provider_id"]][f] = val
         state["applied_affs"].add(a["id"])
     elif t == "Reinstated":
-        a = affs[change["aff_id"]]
         a["status"], a["end_date"] = "Active", None
         state["applied_affs"].add(a["id"])
 
@@ -319,7 +337,7 @@ def fix_and_resend(state, change, code):
     change["directory_code"] = code
     d["attempts"] += 1
     d.update(status="Acknowledged", time=now(), note=f"Accepted with specialty code {code} (attempt {d['attempts']}).")
-    event(change, f"Resent to directory, attempt {d['attempts']}. Provider database already acknowledged, not resent.")
+    event(change, f"Resent to directory, attempt {d['attempts']}. Other destinations already acknowledged, not resent.")
     event(change, "Directory acknowledged")
     refresh_status(state, change)
     return True

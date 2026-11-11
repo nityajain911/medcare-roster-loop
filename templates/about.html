@@ -5,7 +5,7 @@
   <div class="card"><h2>Real code</h2>
     <p>Check-digit rule, duplicate check, required fields, effective-date window, routing policy, the diff by clinician and site, reconciliation, partial apply and resend, and every dashboard metric.</p></div>
   <div class="card"><h2>Simulated <span class="sim">Simulated</span></h2>
-    <p>AI column mapping (a fuzzy matching stand-in), the provider registry (a synthetic test list, not NPPES), the provider database and directory and their acknowledgements, and the directory's specialty code table (an illustrative subset of NUCC taxonomy codes).</p></div>
+    <p>AI column mapping (a fuzzy matching stand-in), the provider registry (a synthetic test list, not NPPES), the provider database, claims and prior auth feed and directory and their acknowledgements, and the directory's specialty code table (an illustrative subset of NUCC taxonomy codes).</p></div>
   <div class="card"><h2>Identifiers</h2>
     <p>The prototype uses fictional, NPI-shaped identifiers with a valid check digit. They start with 9, so they are not real NPIs, and the prototype does not perform live NPPES verification.</p>
     <p>Changes are matched by NPI plus practice plus site, because one clinician can work at several sites. Production would use stable internal ids.</p></div>
@@ -14,7 +14,7 @@
   <div class="card"><h2>Channels</h2>
     <p>The prototype shows one processing loop through a portal and a roster file. Other channels (CAQH, Availity, SFTP, email) would feed the same loop and are future integrations.</p></div>
   <div class="card"><h2>Not in scope</h2>
-    <p>Credentialing, contracting, licensing decisions and claims. No patient or member data. Demo state is kept in memory per visitor and is lost when the server restarts.</p></div>
+    <p>Credentialing, contracting and licensing decisions. MedCare updates the provider record that claims and prior auth systems read; it does not process claims or make prior auth decisions. Care coordination platforms would be another destination later. No patient or member data. Demo state is kept in memory per visitor and is lost when the server restarts.</p></div>
 </div>
 <div class="card"><h2>Data</h2><p>All names, NPIs, practices, sites and {{ plan_name }} are fictional.</p></div>
 {% endblock %}

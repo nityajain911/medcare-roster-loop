@@ -65,7 +65,7 @@
             {{ type_chip(r.type) }} {% if r.flagged %}<span class="flag">Back-dated</span>{% endif %}<br>
             {% if r.type == 'Added' %}<span class="old">Not listed</span><span class="arrow">→</span><span class="new">Joins {{ r.site_name }} as {{ r.specialty }}</span>
             {% elif r.type == 'Removed' %}<span class="old">Active</span><span class="arrow">→</span><span class="new">Left, effective {{ r.effective_date }}</span>
-            <div class="muted small-text">Affected systems: provider database, directory</div>
+            <div class="muted small-text">Affected systems: provider database, claims and prior auth, directory</div>
             {% elif r.type == 'Changed' %}{% for c in r.changes %}{{ c.label }}: <span class="old">{{ c.old }}</span><span class="arrow">→</span><span class="new">{{ c.new }}</span><br>{% endfor %}
             {% elif r.type == 'Unchanged' %}<span class="muted">Same as on file</span>
             {% elif r.type == 'Invalid' %}<span class="muted">NPI in file: </span><span class="mono">{{ r.npi }}</span>

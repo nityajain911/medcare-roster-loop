@@ -25,7 +25,7 @@
       <div class="diff">
         {% for f in c.changed_fields %}{{ f.label }}: <span class="old">{{ f.old }}</span><span class="arrow">→</span><span class="new">{{ f.new }}</span><br>{% endfor %}
       </div>
-      {% if c.type == 'Removed' %}<p class="muted small-text" style="margin-top:6px">Affected systems: provider database, directory</p>{% endif %}
+      {% if c.type == 'Removed' %}<p class="muted small-text" style="margin-top:6px">Affected systems: provider database, claims and prior auth, directory</p>{% endif %}
       {% if c.type == 'Added' %}<p class="muted small-text" style="margin-top:6px">Specialty: {{ c.new.specialty }}. Phone: {{ c.new.phone }}. Start date: {{ c.new.start_date }}.</p>{% endif %}
       <div class="why"><b>Why it is here:</b> {{ c.why }}</div>
     </div>

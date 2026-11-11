@@ -1,4 +1,6 @@
-# Prototype spec: MedCare Roster Loop (v2, final)
+# Prototype spec: MedCare Roster Loop (v3, as built)
+
+Live: https://medcare-roster-loop.onrender.com · Code: https://github.com/nityajain911/medcare-roster-loop
 
 **Paste this into Claude Code, opened inside `proto_starter/`:**
 > Read CLAUDE.md and PROTOTYPE_SPEC.md. Build exactly this spec in this Flask starter, P0 first. Synthetic data only. Then run the `prototype-tester` agent, fix what it finds, and tell me when it is ready to push to GitHub and Render.
@@ -19,11 +21,13 @@ It answers three questions, in this order:
 1. **Practice view** (Lakeview office manager) → sees the 9 affiliations the plan has on file → clicks **Use sample file**.
 2. **What changed** → simulated AI maps the odd column names (one low-confidence column asks for confirmation); every row shows old vs new, check badges, its route and one plain line saying why.
 3. **Submit** → **Plan queue** (Northwind analyst) → approves Dr Mei Lin (new clinician) → approves Dr Arjun Patel's back-dated removal with a required override note.
-4. **Reconciliation** → approved and automatic changes show Provider database: Acknowledged, Directory: Pending → **Run directory sync** → two changes acknowledge; Mei Lin's change shows **Partially applied**: the directory rejected her specialty because it has no directory code → analyst picks the code and clicks **Fix and resend** → Applied.
+4. **Reconciliation** → approved and automatic changes show Provider database: Acknowledged, Claims and prior auth: Acknowledged, Directory: Pending → **Run directory sync** → two changes acknowledge; Mei Lin's change shows **Partially applied** (2 of 3 systems): the directory rejected her specialty because it has no directory code → the registry's code is pre-selected, analyst checks it and clicks **Fix and resend** → Applied.
 5. **Practice status** → Lakeview sees each change: Submitted → Checked → Approved (or Automatic) → Applied, with "Live in directory" only after the directory acknowledges. The bad NPI row shows why it was sent back.
 6. **Dashboard** → north star and driver metrics, computed from this demo's state.
 
 A header line on every page says who you are viewing as ("Viewing as: Lakeview Family Practice, office manager" or "Viewing as: Northwind Health Plan, network analyst").
+
+**Guided demo bar** (below the header, every page): steps 1 to 6 with done / current / to-do states, and a **Next: ... →** button worked out from the visitor's state (e.g. "Next: Approve the changes in the plan queue"). On the page where the next action happens it shows the instruction instead of a button. After the dashboard it says "Demo complete. Reset demo to run it again." A judge with no instructions can follow it end to end.
 
 ## 3. Pages and routes
 Add each to `NAV` in `app.py`: Practice, Plan queue, Reconciliation, Dashboard, How it works.
@@ -104,7 +108,7 @@ Generated on request so the relative dates never go stale. Headers: `Provider Nm
 | 5 | C4 | Same as on file | Unchanged |
 | 6 | C5 | Same as on file | Unchanged |
 | 7 | C6 | New phone, Eff Dt 3 days ago | Changed (phone) → Automatic |
-| 8 | Dr Arjun Patel (C7) | Stat "left", Eff Dt 200 days ago | Removed → Plan review, flagged back-dated |
+| 8 | Dr Arjun Patel (C7) | Stat "left", Eff Dt 200 days ago | Removed → Plan review, flagged back-dated (claims and prior auth end dates would move back) |
 | 9 | C8 | NPI with one digit changed (fails check digit) | Sent back to practice |
 | 10 | Dr Mei Lin, Lakeview East | Valid NPI in registry, Spec "Family Med", Eff Dt 10 days ago | Added → Plan review |
 | 11 | C3 again | Exact repeat of row 4 | Held: duplicate of row 4, not processed |
@@ -115,7 +119,7 @@ Rules this file depends on:
 - A row that fails the check digit is matched to the roster by name + site. Row 9 shows: "NPI fails the check digit. Looks like a typo of the NPI on file for <C8 name>. Please correct and resend." C8's record on file stays as is and is not counted as removed.
 - Mei Lin's "Family Med" is present, so it passes MedCare's required-field check. It is not in the directory's code table, which sets up the failure in 5.5.
 - The mapper's synonyms are tuned so **Loc** comes out under 70% and shows the confirm dropdown (pre-filled with "site"); every other header maps above 70%.
-- **No patients or members anywhere.** The removal shows "Affected systems: provider database, directory", not member counts.
+- **No patients or members anywhere.** The removal shows "Affected systems: provider database, claims and prior auth, directory", not member counts.
 
 ## 5. Logic (real code, keep it simple)
 
@@ -141,32 +145,34 @@ Every routed row shows a one-line **"Why"** in plain words.
 | No change confirmation | Recorded with who, when and scope | "Practice confirmed these affiliations are accurate." |
 | Phone change | Automatic if the plan allows it (default on), else plan review | "Plan allows phone changes to apply automatically." / "Plan requires review of phone changes." |
 | New clinician | Plan review | "New clinicians always need plan approval." |
-| Removal | Plan review; flagged if back-dated beyond the window | "Removals need plan approval. Back-dated 200 days, beyond the 60-day window." |
+| Removal | Plan review; flagged if back-dated beyond the window | "Removals need plan approval. Back-dated 200 days, beyond the 60-day window. Review before claims and prior auth end dates move back." |
 | Any failed check digit or registry check | Sent back to practice | The plain reason from 4.4 |
 | Duplicate in file | Held, not processed | "Same clinician and site appear twice. Row 11 repeats row 4." |
 
 **Plan decisions:**
-- **Approve change.** Approving a flagged change (back-dated) requires an override note, e.g. "Practice confirmed last day of work."
+- **Approve change.** Approving a flagged change (back-dated) requires an override note. The demo pre-fills "Practice confirmed last day of work." to keep the flow fast; clearing it blocks approval.
 - **Reject change** requires a reason. The practice sees "Sent back by plan: <reason>".
 - The scripted demo approves both; rejection must still work (acceptance check 9).
 
 ### 5.5 Destinations, acknowledgement, partial failure
-- Every approved or automatic data change goes to **both** destinations: **Provider database** and **Directory**. Confirmations go to no destination; they update verification status only.
+- Every approved or automatic data change goes to **three** destinations: **Provider database**, **Claims and prior auth** and **Directory**. Confirmations go to no destination; they update verification status only.
 - **Provider database** acknowledges at once (it stores specialty as free text).
+- **Claims and prior auth** acknowledges at once, recording the start or end date that claims and prior auth checks will use. MedCare updates the provider record these systems read; it does not process claims or make prior auth decisions.
 - **Directory** is Pending until **Run directory sync**. It needs each specialty mapped to a directory code (4.3).
 - On sync: C6's phone change and Arjun Patel's removal acknowledge. Mei Lin's is rejected:
-  > **Directory rejected the update.** Provider database acknowledged it.
+  > **Directory rejected the update.** Provider database and claims and prior auth acknowledged it.
   > **Reason:** Specialty "Family Med" has no directory specialty code.
-  > **Fix:** Pick the matching code and resend.
-- While one destination has acknowledged and another has not, the change's status is **Partially applied** (amber).
-- **Fix and resend:** the analyst picks "Family Medicine (207Q00000X)" from a dropdown. This resends the **same change id** (attempt 2) to the directory only. The provider database is not sent it again, because it already acknowledged. Resending never creates a second change. The directory acknowledges and the change becomes **Applied**. Show a small note: "Saved mapping: Family Med → 207Q00000X. Future files use it automatically."
+  > **Fix:** The synthetic registry lists this clinician as 207Q00000X. Check it and resend.
+- Status rules: **Waiting for systems** (grey) while a destination is pending; **Partially applied** (amber) when one destination has rejected and others have acknowledged; **Applied** when all have acknowledged.
+- **Fix and resend:** the dropdown comes pre-selected with the code the synthetic registry holds for this NPI ("Family Medicine (207Q00000X), suggested from synthetic registry"). The analyst checks it and clicks **Fix and resend**. This resends the **same change id** (attempt 2) to the directory only. The other destinations are not sent it again, because they already acknowledged. Resending never creates a second change. The directory acknowledges and the change becomes **Applied**. Show a small note: "Saved mapping: Family Med → 207Q00000X. Future files use it automatically."
 - A change is **Applied** only when every destination has acknowledged.
 - Label the page: **"Destination systems are simulated."**
 
-### 5.6 Reconciliation record
-Fields: change id (e.g. MC-1042), source (file / portal / confirmation), old value, new value, checks, route and why, approver, note and time, each destination with status, attempts and time, final status.
+### 5.6 Audit trail and reverse
+Each change on `/reconcile` has an expandable **Audit trail**: change id (e.g. MC-1042), **record version** (e.g. "v1 → v2", or "v1 (new record)" for a new clinician), source (file and row), old → new, checks, route and why, approver, note and time, each destination with status, time and attempts, final status, and a timestamped event log.
 
-**Reverse (P1):** creates a correcting change (not a delete) that needs both destinations to acknowledge again.
+- Every affiliation carries a version number. Each applied change adds a version; nothing is overwritten without one.
+- **Reverse change** (on applied changes): creates a correcting change (source "Correction", not a delete) that all three destinations must acknowledge again. It adds the next version (e.g. "v2 → v3"). The original is marked "Reversed by MC-xxxx" and stays in the trail.
 
 ### 5.7 Attestation ("Confirm no changes")
 - **Confirm no changes** opens `/practice/confirm`: Lakeview Family Practice, 3 sites, 9 affiliations listed, pending discrepancies count, and a checkbox "I confirm the affiliations shown are accurate as of today." **Record confirmation** stays disabled until the box is ticked.
@@ -175,7 +181,7 @@ Fields: change id (e.g. MC-1042), source (file / portal / confirmation), old val
 - Unchanged rows in a submitted full-roster file also count as confirmed for this cycle.
 
 ### 5.8 Status tracker (practice side)
-Submitted → Checked → Approved (or Automatic) → Applied, with timestamps. While partially applied, show "1 of 2 systems updated". "Live in directory" shows only after the directory acknowledges. Sent back and Held rows show their plain reason.
+Submitted → Checked → Approved (or Automatic) → Applied, with timestamps. While partially applied, show "2 of 3 systems updated". "Live in directory" shows only after the directory acknowledges. Sent back and Held rows show their plain reason.
 
 ## 6. Dashboard (P0 minimal), every number computed from state
 - **North star:** share of Northwind affiliations confirmed and current = affiliations confirmed this cycle or changed-and-applied / all active affiliations. Starts near 60% (4.2); rises when Lakeview confirms or when its changes apply. A new clinician joins the denominator once applied; a removal leaves it once applied.
@@ -188,12 +194,12 @@ Each tile shows its formula in small text. Footer: "Synthetic data shows the che
 
 ## 7. About page (P0): real vs simulated vs assumption
 - **Real code:** check-digit rule, duplicate check, required fields, effective-date window, routing policy, affiliation-level diff, reconciliation logic, partial-apply and resend logic, metrics.
-- **Simulated:** AI column mapping (fuzzy matching stand-in), the provider registry (a synthetic test list, not NPPES), destination systems and their acknowledgements, the directory's specialty code table.
+- **Simulated:** AI column mapping (fuzzy matching stand-in), the provider registry and its specialty codes (a synthetic test list, not NPPES), the three destination systems and their acknowledgements, the directory's specialty code table.
 - **Identifiers:** "The prototype uses fictional, NPI-shaped identifiers with a valid check digit. They start with 9, so they are not real NPIs, and the prototype does not perform live NPPES verification."
 - **Assumptions:** minutes saved per change and per confirmation; the 60-day back-date window (a plan setting).
 - **Channels:** "The prototype shows one processing loop through a portal and a roster file. Other channels (CAQH, Availity, SFTP, email) would feed the same loop and are future integrations."
 - **State:** in memory, per visitor, lost on restart.
-- **Not in scope:** credentialing, contracting, licensing decisions, claims. No patient or member data.
+- **Not in scope:** credentialing, contracting and licensing decisions. MedCare updates the provider record that claims and prior auth systems read; it does not process claims or make prior auth decisions. Care coordination platforms would be another destination later. No patient or member data.
 - **Data:** all names, NPIs, practices, sites and the plan are fictional.
 
 ## 8. Look and copy
@@ -205,14 +211,16 @@ Each tile shows its formula in small text. Footer: "Synthetic data shows the che
 ## 9. Acceptance checks (prototype-tester must pass all)
 1. Fresh incognito visit → home loads → flow steps 1 to 6 work with no errors.
 2. The sample file produces exactly: 6 unchanged (C1 at two sites not flagged), 1 added, 1 removed (back-dated flag), 1 phone change (automatic), 1 bad NPI (sent back, matched to C8, C8 not removed), 1 duplicate (held). **Loc** shows the confirm dropdown.
-3. A change never shows "Applied" before both destinations acknowledge. Mei Lin's change shows "Partially applied" between the directory rejection and the resend.
-4. The directory failure appears exactly once. Fix and resend clears it, keeps the same change id, and does not resend to the provider database.
+3. A change never shows "Applied" before all three destinations acknowledge. Mei Lin's change shows "Partially applied" (2 of 3) between the directory rejection and the resend.
+4. The directory failure appears exactly once. The fix dropdown is pre-selected with the registry's code. Fix and resend clears it, keeps the same change id, and does not resend to the other destinations.
 5. Turning "Phone changes apply automatically" off in settings sends the phone change to plan review on the next upload.
 6. Confirm no changes is blocked until the checkbox is ticked, then raises the north star from about 60% (26/43) to about 81% (35/43). Riverbend and Cedar counts do not change.
 7. Reset returns to the seeded start. Two browsers don't share state. An unknown cookie id seeds a fresh state instead of erroring.
 8. Every number on screen is computed or labelled. No real people's names. No NPI starting with 1 or 2.
 9. Rejecting a change requires a reason, and the practice status shows it. Approving the back-dated removal requires a note.
 10. No page errors on any route; no em dashes in UI copy.
+11. The guided bar's Next button leads a judge from step 1 to 6 with no other instructions.
+12. Audit trail shows record versions. Reverse creates a correcting change, needs all three destinations again, and adds a version; the original stays.
 
 ## 10. Build order
 1. `data.py` (providers, affiliations, sites, registry, code table) + per-visitor state + `/practice` + `/sample.csv` (P0)
@@ -225,7 +233,8 @@ Each tile shows its formula in small text. Footer: "Synthetic data shows the che
 **If time runs short:** cut P1 first, then trim dashboard tiles to the north star only. Never cut reconciliation or partial apply; they are the thesis. Five screens that work beat nine that half work.
 
 ## 11. P1 and later
-- **P1 (if time allows):** Reverse action; expandable change detail panel in the plan queue (original submission, on-file value, checks, approval, destinations, final status); site-move detection (same clinician leaves one site and joins another in one file, shown as one "Moved site" change for plan review).
+- **P1 (if time allows):** expandable change detail panel in the plan queue; site-move detection (same clinician leaves one site and joins another in one file, shown as one "Moved site" change for plan review).
+- **Considered and not built:** fixing a bad NPI inline before submitting. Valid rows already go forward and failed rows go back to the practice with a plain reason, which is the loop the deck describes. File-based session state: not needed with one gunicorn worker, and Render wipes `/tmp` on restart anyway.
 - **Later, do not build:** CAQH, Availity, SFTP and email ingestion; multiple plans; cross-plan sharing; downstream impact analysis; anomaly detection; roster health score.
 
 ## 12. Deploy

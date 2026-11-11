@@ -40,6 +40,20 @@
     </div>
   </div>
   {% endif %}
+  <div class="guide" aria-label="Demo progress">
+    <div class="wrap guide-inner">
+      <ol class="guide-steps">
+        {% for s in demo_steps %}
+          <li class="{{ 'done' if loop.index < guide.step else ('now' if loop.index == guide.step else '') }}"><span>{{ loop.index }}</span>{{ s }}</li>
+        {% endfor %}
+      </ol>
+      {% if guide.url and not guide.here %}
+        <a class="btn small" href="{{ guide.url }}">Next: {{ guide.text }} →</a>
+      {% else %}
+        <span class="guide-hint">{% if guide.url %}Next: {% endif %}{{ guide.text }}</span>
+      {% endif %}
+    </div>
+  </div>
   <main class="wrap main">
     {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.msg }}</div>{% endfor %}
     {% block content %}{% endblock %}
