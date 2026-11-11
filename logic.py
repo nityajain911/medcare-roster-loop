@@ -169,6 +169,7 @@ def analyse(state, batch):
             if guess:
                 touched.add(guess["id"])
                 r["matched_name"] = provs[guess["provider_id"]]["name"]
+                r["matched_npi"] = provs[guess["provider_id"]]["npi"]
             if not digit_ok:
                 why = "Check digit fails."
                 if guess:

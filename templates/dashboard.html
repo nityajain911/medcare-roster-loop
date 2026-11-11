@@ -52,15 +52,18 @@
 <div class="grid grid-3" style="margin-top:16px">
   <div class="tile"><h3>Directory updated within 2 business days</h3><div class="big">{{ val(m.directory_2d.value) }}</div>
     <div class="formula">within 2 business days / applied = {{ m.directory_2d.n }} / {{ m.directory_2d.d }}</div>
-    <p class="muted small-text" style="margin-top:8px">Commercial rule, directory only.</p></div>
+    <p class="muted small-text" style="margin-top:8px">Commercial rule, directory only.</p>
+    <p class="target">Pilot target (proposed): 95%</p></div>
   <div class="tile"><h3>Accepted first time</h3><div class="big">{{ val(m.first_time.value) }}</div>
     <div class="formula">clean / submitted = {{ m.first_time.n }} / {{ m.first_time.d }}</div>
-    <p class="muted small-text" style="margin-top:8px">Failed checks: {{ m.first_time.checks }} · Rejected: {{ m.first_time.plan }} · Duplicates held: {{ m.first_time.held }}</p></div>
+    <p class="muted small-text" style="margin-top:8px">Failed checks: {{ m.first_time.checks }} · Rejected: {{ m.first_time.plan }} · Duplicates held: {{ m.first_time.held }}</p>
+    <p class="target">Pilot target (proposed): 80%</p></div>
   <div class="tile"><h3>Automatic share</h3><div class="big">{{ val(m.automatic.value) }}</div>
     <div class="formula">automatic / submitted = {{ m.automatic.n }} / {{ m.automatic.d }}</div></div>
   <div class="tile"><h3>Hours released (illustrative)</h3><div class="big">{{ m.hours.value }} h</div>
     <div class="formula">({{ m.hours.changes }} changes × 15 min + {{ m.hours.confirmations }} confirmations × 3 min) / 60</div>
-    <p class="muted small-text" style="margin-top:8px">Assumption from the deck's base case.</p></div>
+    <p class="muted small-text" style="margin-top:8px">Assumption from the deck's base case.</p>
+    <p class="target">Pilot target (proposed): plan hours per 100 changes down 40%</p></div>
 </div>
 
 <h2 class="section-title">Guardrails</h2>
@@ -76,5 +79,5 @@
     <div class="formula">decisions without approver role ({{ gr.blocked }} blocked)</div></div>
 </div>
 
-<p class="muted small-text" style="margin-top:20px">Synthetic data: shows the checks work, not real error rates.</p>
+<p class="muted small-text" style="margin-top:20px">Targets are proposed pilot go/no-go bars, set with the pilot plan.<br>Synthetic data: shows the checks work, not real error rates.</p>
 {% endblock %}

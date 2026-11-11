@@ -161,6 +161,56 @@ def main():
         assert "—" not in body, f"em dash on {path}"
         assert not re.search(r"\b[12]\d{9}\b", body), f"real-looking NPI on {path}"
     assert c.get("/practice/review/nope").status_code == 404
+
+    # Inline fixes survive Confirm mapping, in either order, and end the same way
+    for order in ("fix_then_map", "map_then_fix"):
+        k = client()
+        k.get("/")
+        ks = state_of(k)
+        good_npi = next(p["npi"] for p in ks["providers"].values() if p["name"] == "Ivy Vale")
+        r = k.post("/practice/sample")
+        kb = r.headers["Location"].rsplit("/", 1)[-1]
+        edits = {"npi_fix_9": good_npi, "drop_11": "1"}
+        if order == "fix_then_map":
+            k.post(f"/practice/review/{kb}/mapping", data={"field_2": "site", **edits})
+            page = text(k.get(f"/practice/review/{kb}"))
+            assert f'value="{good_npi}"' in page and 'class="dropped"' in page and "Undo" in page, order
+        else:
+            k.post(f"/practice/review/{kb}/mapping", data={"field_2": "site"})
+        assert "Use suggested NPI from synthetic registry" in text(k.get(f"/practice/review/{kb}"))
+        banner = text(k.post(f"/practice/review/{kb}/submit", data=edits, follow_redirects=True))
+        assert "Submitted 3 changes." in banner, order
+        statuses = [c["status"] for c in ks["changes"].values()]
+        assert len(statuses) == 3 and "Held" not in statuses and "Sent back" not in statuses, statuses
+        assert "7 affiliations confirmed" in text(k.get("/practice/status")), order
+
+    # Reverse is on applied cards for approvers only; a reversal ends Applied again
+    v = client()
+    v.get("/")
+    vs = state_of(v)
+    r = v.post("/practice/sample")
+    vb = r.headers["Location"].rsplit("/", 1)[-1]
+    v.post(f"/practice/review/{vb}/mapping", data={"field_2": "site"})
+    v.post(f"/practice/review/{vb}/submit")
+    v.get("/plan/queue?as=plan")
+    v.post("/reconcile/sync")
+    rec = text(v.get("/reconcile"))
+    assert "Reverse change" in rec and rec.index("Reverse change") < rec.index("Audit trail")
+    rec_practice = text(v.get("/reconcile?as=practice"))
+    assert "Reverse change" not in rec_practice and "Plan approvers can reverse applied changes." in rec_practice
+    auto = next(c for c in vs["changes"].values() if c["route"] == "automatic")
+    v.get("/reconcile?as=plan")
+    v.post(f"/reconcile/{auto['id']}/reverse")
+    v.post("/reconcile/sync")
+    assert vs["changes"][auto["reversed_by"]]["status"] == "Applied"
+
+    # Dashboard targets and the tax ID note
+    d = text(v.get("/dashboard"))
+    for t in ["Pilot target (proposed): 80%", "Pilot target (proposed): 95%",
+              "Pilot target (proposed): plan hours per 100 changes down 40%",
+              "Targets are proposed pilot go/no-go bars, set with the pilot plan."]:
+        assert t in d, t
+    assert "Production: step-up sign-in required" in text(v.get("/plan/settings"))
     print("Acceptance checks OK")
 
 

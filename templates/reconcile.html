@@ -74,6 +74,15 @@
     {% endif %}
   </div>
   {% endif %}
+  {% if c.status == 'Applied' and not c.reversed_by and c.source != 'Correction' %}
+    {% if approver %}
+    <form method="post" action="{{ url_for('reverse', cid=c.id) }}" class="btn-row" style="margin-bottom:10px">
+      <button class="btn ghost small" type="submit">Reverse change</button>
+    </form>
+    {% else %}
+    <p class="muted small-text">Plan approvers can reverse applied changes.</p>
+    {% endif %}
+  {% endif %}
   {% if c.directory_code and c.specialty in saved_map %}
     <p class="muted small-text">Saved: {{ c.specialty }} → {{ saved_map[c.specialty] }} for future files.</p>
   {% endif %}
@@ -89,11 +98,6 @@
       <tr><th>Decision</th><td>{% if c.decision %}{{ c.decision.action }} by {{ c.decision.by }}, {{ c.decision.time }}{% if c.decision.note and not c.date_choice %}. "{{ c.decision.note }}"{% endif %}{% endif %}</td></tr>
     </table></div>
     <ul class="events">{% for e in c.events %}<li>{{ e.time }}: <b>{{ e.label }}</b></li>{% endfor %}</ul>
-    {% if approver and c.status == 'Applied' and not c.reversed_by and c.source != 'Correction' %}
-    <form method="post" action="{{ url_for('reverse', cid=c.id) }}" style="margin-top:10px">
-      <button class="btn ghost small" type="submit">Reverse change</button>
-    </form>
-    {% endif %}
   </details>
 </div>
 {% else %}

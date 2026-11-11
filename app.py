@@ -329,11 +329,20 @@ def review(bid):
                            floor=logic.CONFIDENCE_FLOOR, registry=sorted(g.state["registry"]))
 
 
+def keep_draft(batch):
+    """Inline NPI fixes and dropped rows made before the mapping is confirmed survive the reload."""
+    batch["draft_fix"] = {int(k[8:]): re.sub(r"\D", "", v) for k, v in request.form.items()
+                          if k.startswith("npi_fix_") and k[8:].isdigit() and v.strip()}
+    batch["draft_drop"] = {int(k[5:]) for k, v in request.form.items()
+                           if k.startswith("drop_") and k[5:].isdigit() and v == "1"}
+
+
 @app.post("/practice/review/<bid>/mapping")
 def confirm_mapping(bid):
     batch = g.state["batches"].get(bid) or abort(404)
     if batch["submitted"]:
         return redirect(url_for("review", bid=bid))
+    keep_draft(batch)
     if batch.get("kind") == "email":
         for i, item in enumerate(batch["items"]):
             date = logic.parse_date(request.form.get(f"date_{i}", ""))
@@ -626,7 +635,7 @@ POLICY = [
     ("Phone or hours change", "Automatic if allowed, else plan review", "Toggle below"),
     ("New clinician", "Plan review", ""),
     ("Removal", "Plan review, flagged if back-dated", ""),
-    ("Tax ID or billing change", "Plan review with extra checks", "Not in sample data"),
+    ("Tax ID or billing change", "Plan review with extra checks", "Not in sample data. Production: step-up sign-in required"),
     ("Failed NPI check", "Sent back", ""),
     ("Duplicate or conflict", "Held and escalated", ""),
 ]
